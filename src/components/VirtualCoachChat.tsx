@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { ChatMessage, CyclistProfile, TrainingProgram, WorkoutPlan } from '../types';
+import { chatWithCoach, generateTrainingProgram, generateWorkoutPlan } from '../utils/geminiClient';
 import {
   Sparkles,
   Send,
@@ -83,18 +84,11 @@ export const VirtualCoachChat: React.FC<VirtualCoachChatProps> = ({
     setIsLoading(true);
 
     try {
-      const res = await fetch('/api/coach/chat', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          messages: newMessages,
-          cyclistProfile,
-          currentProgram,
-        }),
+      const data = await chatWithCoach({
+        messages: newMessages,
+        cyclistProfile,
+        currentProgram,
       });
-
-      if (!res.ok) throw new Error('Erreur échange coach');
-      const data = await res.json();
 
       const coachMsg: ChatMessage = {
         id: 'coach-' + Date.now(),
@@ -131,17 +125,11 @@ export const VirtualCoachChat: React.FC<VirtualCoachChatProps> = ({
     setIsGeneratingAction(true);
     try {
       if (action.type === 'generate_program') {
-        const res = await fetch('/api/program/generate', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            cyclistProfile,
-            goalDetails: action.payload?.payloadPrompt || cyclistProfile.goalDescription,
-            durationWeeks: 4,
-          }),
+        const program: TrainingProgram = await generateTrainingProgram({
+          cyclistProfile,
+          goalDetails: action.payload?.payloadPrompt || cyclistProfile.goalDescription,
+          durationWeeks: 4,
         });
-        if (!res.ok) throw new Error('Erreur génération programme');
-        const program: TrainingProgram = await res.json();
         onProgramGenerated(program);
 
         setMessages((prev) => [
@@ -155,16 +143,10 @@ export const VirtualCoachChat: React.FC<VirtualCoachChatProps> = ({
         ]);
       } else if (action.type === 'generate_plan' || action.type === 'start_workout') {
         const promptToUse = action.payload?.payloadPrompt || 'Séance spécifique pour progression ' + cyclistProfile.primaryGoal;
-        const res = await fetch('/api/plan/generate', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            prompt: promptToUse,
-            cyclistProfile,
-          }),
+        const plan: WorkoutPlan = await generateWorkoutPlan({
+          prompt: promptToUse,
+          cyclistProfile,
         });
-        if (!res.ok) throw new Error('Erreur génération séance');
-        const plan: WorkoutPlan = await res.json();
         onSelectGeneratedPlan(plan);
       }
     } catch (err) {

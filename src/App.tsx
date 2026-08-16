@@ -16,7 +16,9 @@ import { VirtualCoachChat } from './components/VirtualCoachChat';
 import { ProgramDashboard } from './components/ProgramDashboard';
 import { VoiceSettingsModal } from './components/VoiceSettingsModal';
 import { OnboardingModal } from './components/OnboardingModal';
+import { ApiKeyModal } from './components/ApiKeyModal';
 import { audioEngine } from './utils/audioEngine';
+import { hasApiKey } from './utils/apiKey';
 import {
   getStoredProfile,
   saveStoredProfile,
@@ -39,6 +41,7 @@ import {
   CheckCircle,
   ShieldAlert,
   UserCheck,
+  KeyRound,
 } from 'lucide-react';
 
 export type MainNavTab = 'workouts' | 'routes' | 'program' | 'coach' | 'profile' | 'history';
@@ -59,6 +62,8 @@ export default function App() {
   // Modals
   const [isOnboardingOpen, setIsOnboardingOpen] = useState<boolean>(!hasCompletedOnboarding());
   const [isVoiceModalOpen, setIsVoiceModalOpen] = useState<boolean>(false);
+  const [isApiKeyModalOpen, setIsApiKeyModalOpen] = useState<boolean>(false);
+  const [isApiKeyConfigured, setIsApiKeyConfigured] = useState<boolean>(hasApiKey());
 
   // GPS Availability Status
   const [isGpsAvailable, setIsGpsAvailable] = useState<boolean>(true);
@@ -229,6 +234,19 @@ export default function App() {
             {/* Quick Profile & Voice Settings Shortcut */}
             <div className="flex items-center gap-2 shrink-0">
               <button
+                id="btn-header-api-key"
+                onClick={() => setIsApiKeyModalOpen(true)}
+                className={`p-2.5 rounded-xl border text-xs font-bold flex items-center gap-1.5 cursor-pointer transition-colors ${
+                  isApiKeyConfigured
+                    ? 'bg-stone-900 hover:bg-stone-800 border-stone-800 hover:border-stone-700 text-stone-400'
+                    : 'bg-amber-500/15 hover:bg-amber-500/25 border-amber-500/40 text-amber-400'
+                }`}
+                title="Clé API Gemini (fonctions IA)"
+              >
+                <KeyRound className="w-4 h-4" />
+              </button>
+
+              <button
                 id="btn-header-voice-modal"
                 onClick={() => setIsVoiceModalOpen(true)}
                 className="p-2.5 sm:px-3 sm:py-2 rounded-xl bg-stone-900 hover:bg-stone-800 border border-stone-800 hover:border-stone-700 text-xs font-bold text-amber-400 flex items-center gap-1.5 cursor-pointer transition-colors"
@@ -290,6 +308,24 @@ export default function App() {
 
       {/* Main Body Content Container */}
       <main className="max-w-7xl mx-auto px-4 sm:px-6 py-6 sm:py-8 w-full flex-1">
+        {/* API Key Notice: IA features disabled until a Gemini key is provided */}
+        {!isApiKeyConfigured && (
+          <div className="mb-5 p-3 rounded-2xl bg-amber-500/10 border border-amber-500/30 flex flex-wrap items-center gap-2.5 text-amber-300 text-xs">
+            <KeyRound className="w-4 h-4 shrink-0 text-amber-400" />
+            <span className="flex-1 min-w-[200px]">
+              Aucune clé Gemini enregistrée : le coach IA, la génération de séances et la voix studio
+              sont désactivés. Les séances préenregistrées, le GPS et la voix du navigateur restent
+              disponibles.
+            </span>
+            <button
+              onClick={() => setIsApiKeyModalOpen(true)}
+              className="px-3.5 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-stone-950 font-black text-[11px] uppercase tracking-wider cursor-pointer transition-colors"
+            >
+              Ajouter ma clé
+            </button>
+          </div>
+        )}
+
         {/* GPS Notice Warning if denied */}
         {gpsStatusText && (
           <div className="mb-5 p-3 rounded-2xl bg-amber-500/10 border border-amber-500/30 flex items-center gap-2.5 text-amber-300 text-xs">
@@ -414,6 +450,16 @@ export default function App() {
       <VoiceSettingsModal
         isOpen={isVoiceModalOpen}
         onClose={() => setIsVoiceModalOpen(false)}
+      />
+
+      {/* Gemini API Key Modal (clé stockée localement sur l'appareil) */}
+      <ApiKeyModal
+        isOpen={isApiKeyModalOpen}
+        onClose={() => {
+          setIsApiKeyModalOpen(false);
+          setIsApiKeyConfigured(hasApiKey());
+        }}
+        onSaved={() => setIsApiKeyConfigured(hasApiKey())}
       />
     </div>
   );

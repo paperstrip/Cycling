@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { RideRecord, StepExecutionRecord, CyclistProfile } from '../types';
 import { saveRideRecord, exportRideToGPX } from '../utils/storage';
+import { generateRideDebrief } from '../utils/geminiClient';
 import { formatTimeDisplay, formatTimeHoursDisplay, formatSecondsToMinutes } from '../utils/planFlatten';
 import { RouteViewer } from './RouteViewer';
 import {
@@ -57,18 +58,11 @@ export const SummaryScreen: React.FC<SummaryScreenProps> = ({
       if (coachDebrief) return;
       setIsLoadingDebrief(true);
       try {
-        const res = await fetch('/api/coach/debrief', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            rideRecord: ride,
-            cyclistProfile,
-          }),
+        const debrief = await generateRideDebrief({
+          rideRecord: ride,
+          cyclistProfile,
         });
-        if (res.ok) {
-          const data = await res.json();
-          setCoachDebrief(data.debrief);
-        }
+        setCoachDebrief(debrief);
       } catch (err) {
         console.warn('Debrief error:', err);
       } finally {

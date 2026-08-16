@@ -7,8 +7,10 @@
  * - Dual Engine: Instant Browser Speech & Gemini Studio HD Neural Voice
  */
 
-import { VoiceSettings, CoachPersona, IntensityZone, RadioAmbienceStyle } from '../types';
+import { VoiceSettings, CoachPersona, IntensityZone, RadioAmbienceStyle, VoiceEngineMode } from '../types';
 import { getStoredVoiceSettings, saveStoredVoiceSettings, DEFAULT_VOICE_SETTINGS } from './profileStorage';
+import { hasApiKey } from './apiKey';
+import { synthesizeSpeech } from './geminiClient';
 
 /**
  * Transforms technical cycling text into natural, spoken French with human rhythm
@@ -713,6 +715,12 @@ class HumanizedAudioEngine {
       return true;
     }
 
+    // Sans clé Gemini configurée, on utilise directement la voix locale du navigateur.
+    if (!hasApiKey()) {
+      this.speakViaSpeechSynthesis(rawText, options);
+      return false;
+    }
+
     const ctx = this.getAudioContext();
     if (!ctx) {
       if (options?.onError) options.onError(new Error("AudioContext indisponible"));
@@ -739,22 +747,11 @@ class HumanizedAudioEngine {
       let audioBuffer: AudioBuffer | null = this.audioBufferCache.get(cacheKey) || null;
 
       if (!audioBuffer) {
-        const response = await fetch('/api/coach/tts', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            text: textToSpeak,
-            persona,
-            intensity,
-          }),
+        const data = await synthesizeSpeech({
+          text: textToSpeak,
+          persona,
         });
 
-        if (!response.ok) {
-          const errJson = await response.json().catch(() => ({}));
-          throw new Error(errJson.error || `Erreur serveur ${response.status}`);
-        }
-
-        const data = await response.json();
         if (data.audioBase64) {
           audioBuffer = this.decodePcmToAudioBuffer(data.audioBase64, data.sampleRate || 24000);
           if (audioBuffer) {

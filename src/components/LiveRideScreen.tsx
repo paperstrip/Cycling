@@ -11,6 +11,7 @@ import {
 import { flattenWorkoutPlan, formatTimeDisplay, formatTimeHoursDisplay } from '../utils/planFlatten';
 import { GeoTracker, GeoState } from '../utils/geoTracker';
 import { audioEngine } from '../utils/audioEngine';
+import { generateLiveMotivation } from '../utils/geminiClient';
 import { VoiceSettingsModal } from './VoiceSettingsModal';
 import {
   Play,
@@ -306,7 +307,7 @@ export const LiveRideScreen: React.FC<LiveRideScreenProps> = ({
   // Periodic AI Coach Commentary Call
   const triggerPeriodicAiCoach = async () => {
     try {
-      const payload = {
+      const comment = await generateLiveMotivation({
         blockName: currentStep.title,
         blockType: currentStep.type,
         targetIntensity: currentStep.targetIntensity,
@@ -318,20 +319,11 @@ export const LiveRideScreen: React.FC<LiveRideScreenProps> = ({
         workoutGoal: plan.objectif,
         stepNumber: currentStepIndex + 1,
         totalSteps: steps.length,
-      };
-
-      const res = await fetch('/api/coach/motivate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
       });
 
-      if (res.ok) {
-        const data = await res.json();
-        if (data.comment) {
-          audioEngine.speak(data.comment, { priority: 'normal', intensity: currentStep.targetIntensity });
-          logCoachMessage(data.comment, 'gemini_coach');
-        }
+      if (comment) {
+        audioEngine.speak(comment, { priority: 'normal', intensity: currentStep.targetIntensity });
+        logCoachMessage(comment, 'gemini_coach');
       }
     } catch (e) {
       // Ignore silently without halting local timer

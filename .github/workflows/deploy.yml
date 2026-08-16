@@ -1,0 +1,65 @@
+name: Déploiement GitHub Pages
+
+on:
+  push:
+    branches: [main]
+  # Permet de relancer le déploiement à la main depuis l'onglet Actions.
+  workflow_dispatch:
+
+# Autorisations nécessaires au déploiement Pages.
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Un seul déploiement à la fois ; les pushs successifs attendent leur tour.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Récupération du code
+        uses: actions/checkout@v4
+
+      - name: Installation de Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Installation des dépendances
+        run: npm ci
+
+      - name: Vérification TypeScript
+        run: npm run lint
+
+      - name: Build de production
+        # BASE_PATH doit correspondre au nom du dépôt : https://<user>.github.io/Cycling/
+        env:
+          BASE_PATH: /${{ github.event.repository.name }}/
+        run: npm run build
+
+      - name: Fallback SPA (404.html)
+        run: cp dist/index.html dist/404.html
+
+      - name: Configuration de Pages
+        uses: actions/configure-pages@v5
+
+      - name: Envoi de l'artefact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Déploiement sur GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
