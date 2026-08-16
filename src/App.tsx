@@ -17,6 +17,8 @@ import { ProgramDashboard } from './components/ProgramDashboard';
 import { VoiceSettingsModal } from './components/VoiceSettingsModal';
 import { OnboardingModal } from './components/OnboardingModal';
 import { ApiKeyModal } from './components/ApiKeyModal';
+import { BottomNav, NAV_ITEMS } from './components/BottomNav';
+import { PwaStatusBar } from './components/PwaStatusBar';
 import { audioEngine } from './utils/audioEngine';
 import { hasApiKey } from './utils/apiKey';
 import {
@@ -29,18 +31,10 @@ import {
 } from './utils/profileStorage';
 import {
   Zap,
-  Compass,
   Calendar,
   MessageSquare,
-  Activity,
-  History,
   Headphones,
-  Sliders,
-  Play,
-  MapPin,
-  CheckCircle,
   ShieldAlert,
-  UserCheck,
   KeyRound,
 } from 'lucide-react';
 
@@ -68,6 +62,17 @@ export default function App() {
   // GPS Availability Status
   const [isGpsAvailable, setIsGpsAvailable] = useState<boolean>(true);
   const [gpsStatusText, setGpsStatusText] = useState<string | null>(null);
+
+  // Raccourcis du manifeste PWA (?tab=coach) : appui long sur l'icône de l'app.
+  useEffect(() => {
+    const requestedTab = new URLSearchParams(window.location.search).get('tab');
+    const isKnownTab = NAV_ITEMS.some((item) => item.id === requestedTab);
+    if (isKnownTab) {
+      setActiveTab(requestedTab as MainNavTab);
+      // Nettoie l'URL pour que l'onglet ne soit pas réimposé aux rechargements.
+      window.history.replaceState({}, '', window.location.pathname);
+    }
+  }, []);
 
   // Check Geolocation permission on startup
   useEffect(() => {
@@ -173,17 +178,20 @@ export default function App() {
   }
 
   return (
-    <div className="min-h-screen bg-stone-950 text-white flex flex-col justify-between selection:bg-amber-500 selection:text-stone-950 font-sans">
+    <div className="min-h-screen bg-stone-950 text-white flex flex-col selection:bg-amber-500 selection:text-stone-950 font-sans">
+      {/* Bandeaux PWA : mise à jour, hors connexion, installation */}
+      <PwaStatusBar />
+
       {/* Top Main Navigation Header */}
-      <header className="sticky top-0 z-40 bg-stone-950/90 backdrop-blur-md border-b border-stone-800">
+      <header className="sticky top-0 z-40 bg-stone-950/90 backdrop-blur-md border-b border-stone-800 pt-safe px-safe">
         <div className="max-w-7xl mx-auto px-4 sm:px-6">
-          <div className="flex items-center justify-between h-16 sm:h-18 gap-3">
+          <div className="flex items-center justify-between h-14 sm:h-18 gap-3">
             {/* Logo and App Title */}
             <div
               onClick={() => setActiveTab('workouts')}
-              className="flex items-center gap-3 cursor-pointer select-none shrink-0"
+              className="flex items-center gap-2.5 cursor-pointer select-none shrink-0"
             >
-              <div className="w-10 h-10 rounded-2xl bg-amber-500 text-stone-950 flex items-center justify-center font-black shadow-lg shadow-amber-500/20">
+              <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-2xl bg-amber-500 text-stone-950 flex items-center justify-center font-black shadow-lg shadow-amber-500/20">
                 <Zap className="w-5 h-5 fill-stone-950" />
               </div>
               <div>
@@ -203,21 +211,14 @@ export default function App() {
 
             {/* Desktop Navigation Tabs */}
             <nav className="hidden md:flex items-center gap-1 bg-stone-900/80 p-1.5 rounded-2xl border border-stone-800">
-              {[
-                { id: 'workouts', label: 'Séances', icon: Zap },
-                { id: 'routes', label: 'Itinéraires & GPS', icon: Compass },
-                { id: 'program', label: 'Programme', icon: Calendar },
-                { id: 'coach', label: 'Coach DS', icon: MessageSquare },
-                { id: 'profile', label: 'Profil & Zones', icon: Activity },
-                { id: 'history', label: 'Historique', icon: History },
-              ].map((tab) => {
+              {NAV_ITEMS.map((tab) => {
                 const isSelected = activeTab === tab.id;
                 const Icon = tab.icon;
                 return (
                   <button
                     key={tab.id}
                     id={`nav-tab-${tab.id}`}
-                    onClick={() => setActiveTab(tab.id as MainNavTab)}
+                    onClick={() => setActiveTab(tab.id)}
                     className={`px-3.5 py-2 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer ${
                       isSelected
                         ? 'bg-amber-500 text-stone-950 shadow-md shadow-amber-500/20'
@@ -275,39 +276,11 @@ export default function App() {
             </div>
           </div>
 
-          {/* Mobile Tab Bar (Scrollable on small screens) */}
-          <div className="flex md:hidden items-center gap-1 py-2 overflow-x-auto no-scrollbar border-t border-stone-850">
-            {[
-              { id: 'workouts', label: 'Séances', icon: Zap },
-              { id: 'routes', label: 'Itinéraires', icon: Compass },
-              { id: 'program', label: 'Programme', icon: Calendar },
-              { id: 'coach', label: 'Coach DS', icon: MessageSquare },
-              { id: 'profile', label: 'Profil', icon: Activity },
-              { id: 'history', label: 'Historique', icon: History },
-            ].map((tab) => {
-              const isSelected = activeTab === tab.id;
-              const Icon = tab.icon;
-              return (
-                <button
-                  key={tab.id}
-                  onClick={() => setActiveTab(tab.id as MainNavTab)}
-                  className={`px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1 shrink-0 cursor-pointer transition-all ${
-                    isSelected
-                      ? 'bg-amber-500 text-stone-950'
-                      : 'bg-stone-900 text-stone-400'
-                  }`}
-                >
-                  <Icon className="w-3.5 h-3.5" />
-                  <span>{tab.label}</span>
-                </button>
-              );
-            })}
-          </div>
         </div>
       </header>
 
       {/* Main Body Content Container */}
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 py-6 sm:py-8 w-full flex-1">
+      <main className="max-w-7xl mx-auto px-4 sm:px-6 py-5 sm:py-8 w-full flex-1 px-safe pb-nav">
         {/* API Key Notice: IA features disabled until a Gemini key is provided */}
         {!isApiKeyConfigured && (
           <div className="mb-5 p-3 rounded-2xl bg-amber-500/10 border border-amber-500/30 flex flex-wrap items-center gap-2.5 text-amber-300 text-xs">
@@ -433,10 +406,13 @@ export default function App() {
         )}
       </main>
 
-      {/* Footer */}
-      <footer className="border-t border-stone-800 bg-stone-950 py-4 text-center text-xs text-stone-500">
+      {/* Footer (bureau : la barre basse occupe cette place sur mobile) */}
+      <footer className="hidden md:block border-t border-stone-800 bg-stone-950 py-4 text-center text-xs text-stone-500">
         <p>CycloCoach Pro • Coaching Vocal Audio & Itinéraires Réels OpenStreetMap</p>
       </footer>
+
+      {/* Barre de navigation basse (mobile) */}
+      <BottomNav activeTab={activeTab} onSelect={setActiveTab} />
 
       {/* Calibration / Onboarding Wizard Modal */}
       <OnboardingModal

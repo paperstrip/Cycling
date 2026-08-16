@@ -5,7 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
     <title>CycloCoach - Entraîneur Cycliste Vocal & GPS</title>
     <meta name="description" content="Application de coaching cycliste vocal en direct et suivi GPS par intervalles." />
-    
+    <meta name="color-scheme" content="dark" />
+
     <!-- PWA & Mobile Web App Settings -->
     <link rel="manifest" href="%BASE_URL%manifest.webmanifest" />
     <meta name="theme-color" content="#0c0a09" />
@@ -13,21 +14,14 @@
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="apple-mobile-web-app-title" content="CycloCoach" />
-    <link rel="apple-touch-icon" href="%BASE_URL%icon.svg" />
+
+    <!-- iOS ignore les SVG pour l'écran d'accueil : un PNG 180px est obligatoire. -->
+    <link rel="apple-touch-icon" sizes="180x180" href="%BASE_URL%apple-touch-icon.png" />
     <link rel="icon" type="image/svg+xml" href="%BASE_URL%icon.svg" />
+    <link rel="icon" type="image/png" sizes="192x192" href="%BASE_URL%icon-192.png" />
   </head>
   <body class="bg-stone-950 text-white antialiased selection:bg-amber-500 selection:text-stone-950">
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
-    <script>
-      if ('serviceWorker' in navigator && window.location.protocol === 'https:') {
-        window.addEventListener('load', () => {
-          navigator.serviceWorker.register('%BASE_URL%sw.js').catch(err => {
-            console.log('SW registration skipped:', err);
-          });
-        });
-      }
-    </script>
   </body>
 </html>
-

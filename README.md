@@ -36,6 +36,20 @@ pour le suivi GPS. Le son du coach nécessite une première interaction avec l'�
 > HTTPS est requis pour le GPS et l'installation PWA : GitHub Pages le fournit
 > automatiquement.
 
+### Ce que l'installation apporte
+
+- **Plein écran** sans barre d'adresse, icône dédiée sur l'écran d'accueil.
+- **Fonctionnement hors connexion** : l'interface, les séances préenregistrées,
+  le chronomètre et le GPS restent opérationnels sans réseau (utile en pleine
+  campagne). Un bandeau signale le mode hors connexion.
+- **Écran maintenu allumé** pendant la sortie, et réactivé automatiquement au
+  retour dans l'app.
+- **Mises à jour** : quand une nouvelle version est déployée, un bandeau
+  « Nouvelle version disponible » propose d'actualiser — rien n'est écrasé en
+  pleine séance.
+- **Raccourcis** : un appui long sur l'icône ouvre directement une séance ou le
+  coach.
+
 ## 3. Clé API Gemini
 
 Les fonctions IA (coach, génération de séances/programmes, voix studio) utilisent
@@ -82,4 +96,18 @@ serait lisible dans le JavaScript du site.
 - **`src/utils/geoTracker.ts`** — suivi GPS via l'API Geolocation.
 - **`src/utils/audioEngine.ts`** — moteur audio (voix Gemini TTS avec repli automatique
   sur la synthèse vocale du navigateur).
-- **`public/sw.js`** — service worker : fonctionnement hors connexion pour l'interface.
+- **`src/utils/pwa.ts`** — cycle de vie PWA : service worker, détection des mises
+  à jour, état d'installation et de connexion.
+- **`public/sw.js`** — service worker : préchargement des assets du build
+  (injectés par le plugin `pwaServiceWorker` de `vite.config.ts`), réseau
+  d'abord pour le HTML, cache d'abord pour les assets.
+- **`src/components/BottomNav.tsx`** — navigation basse mobile ; les mêmes
+  destinations alimentent la barre haute sur grand écran.
+- **`src/components/WorkoutProfileBar.tsx`** — profil d'intensité de la séance,
+  réutilisé en direct pendant la sortie pour situer le bloc en cours.
+
+### Icônes
+
+Les PNG de `public/` (`apple-touch-icon.png`, `icon-192`, `icon-512`,
+`icon-maskable-512`) sont générés à partir de `public/icon.svg`. iOS ignore les
+SVG pour l'écran d'accueil : le PNG 180×180 est indispensable.

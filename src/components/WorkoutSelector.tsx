@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { WorkoutPlan, CyclistProfile, CyclingRoute, TrainingProgram } from '../types';
 import { PRESET_WORKOUTS } from '../data/presetWorkouts';
 import { flattenWorkoutPlan, formatSecondsToMinutes } from '../utils/planFlatten';
+import { WorkoutProfileBar } from './WorkoutProfileBar';
 import {
   Sparkles,
   Play,
@@ -18,6 +19,7 @@ import {
   Headphones,
   Sliders,
   Check,
+  ChevronDown,
 } from 'lucide-react';
 
 interface WorkoutSelectorProps {
@@ -44,6 +46,7 @@ export const WorkoutSelector: React.FC<WorkoutSelectorProps> = ({
   onSelectPlan,
 }) => {
   const [filterCategory, setFilterCategory] = useState<'all' | 'vo2max' | 'seuil' | 'endurance' | 'recup'>('all');
+  const [isBlockDetailOpen, setIsBlockDetailOpen] = useState<boolean>(false);
 
   const filteredPresets = PRESET_WORKOUTS.filter((p) => {
     if (filterCategory === 'all') return true;
@@ -87,11 +90,11 @@ export const WorkoutSelector: React.FC<WorkoutSelectorProps> = ({
           </div>
 
           {/* Big Start Button */}
-          <div className="flex items-center gap-3 shrink-0">
+          <div className="flex items-center gap-3 shrink-0 w-full lg:w-auto">
             <button
               id="btn-start-workout-hub"
               onClick={() => onStartWorkout(selectedPlan)}
-              className="py-4 px-8 rounded-2xl bg-amber-500 hover:bg-amber-400 text-stone-950 font-black text-sm uppercase tracking-wider flex items-center justify-center gap-2.5 transition-all cursor-pointer shadow-xl shadow-amber-500/25 transform hover:-translate-y-0.5"
+              className="w-full lg:w-auto py-4 px-8 rounded-2xl bg-amber-500 hover:bg-amber-400 text-stone-950 font-black text-sm uppercase tracking-wider flex items-center justify-center gap-2.5 transition-all cursor-pointer shadow-xl shadow-amber-500/25 transform hover:-translate-y-0.5"
             >
               <Play className="w-5 h-5 fill-stone-950" />
               <span>Démarrer la séance</span>
@@ -117,37 +120,54 @@ export const WorkoutSelector: React.FC<WorkoutSelectorProps> = ({
           </div>
         )}
 
-        {/* Interval Blocks Timeline Preview */}
+        {/* Profil d'intensité : la forme de la séance en un coup d'œil */}
         <div className="space-y-2.5">
           <div className="flex items-center justify-between text-xs text-stone-400">
             <span className="font-bold uppercase tracking-wider text-stone-300">
-              Déroulé des blocs ({flattenedSteps.length} étapes)
+              Profil de la séance
             </span>
             <span className="text-amber-400 font-mono text-[11px]">Guidage vocal temps réel</span>
           </div>
 
-          {/* Visual Step Bars */}
-          <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-6 gap-2">
-            {flattenedSteps.map((step, idx) => {
-              let color = 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300';
-              if (step.targetIntensity === 'moyen') color = 'border-cyan-500/30 bg-cyan-500/10 text-cyan-300';
-              if (step.targetIntensity === 'seuil') color = 'border-amber-500/30 bg-amber-500/10 text-amber-300';
-              if (step.targetIntensity === 'a_fond') color = 'border-rose-500/30 bg-rose-500/10 text-rose-300';
+          <WorkoutProfileBar steps={flattenedSteps} />
 
-              return (
-                <div key={idx} className={`p-2.5 rounded-xl border ${color} text-left space-y-1`}>
-                  <div className="flex items-center justify-between font-mono text-[10px] text-stone-400">
-                    <span>Bloc {idx + 1}</span>
-                    <span className="font-bold text-white">{formatSecondsToMinutes(step.durationSec)}</span>
+          {/* Détail bloc par bloc, replié par défaut pour garder l'écran lisible */}
+          <button
+            onClick={() => setIsBlockDetailOpen((v) => !v)}
+            aria-expanded={isBlockDetailOpen}
+            className="w-full mt-1 px-3.5 py-2.5 rounded-xl bg-stone-950 hover:bg-stone-800/60 border border-stone-800 text-stone-300 text-xs font-bold flex items-center justify-between cursor-pointer transition-colors"
+          >
+            <span>
+              {isBlockDetailOpen ? 'Masquer' : 'Voir'} le détail des {flattenedSteps.length} blocs
+            </span>
+            <ChevronDown
+              className={`w-4 h-4 transition-transform ${isBlockDetailOpen ? 'rotate-180' : ''}`}
+            />
+          </button>
+
+          {isBlockDetailOpen && (
+            <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-6 gap-2 animate-fade-up">
+              {flattenedSteps.map((step, idx) => {
+                let color = 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300';
+                if (step.targetIntensity === 'moyen') color = 'border-cyan-500/30 bg-cyan-500/10 text-cyan-300';
+                if (step.targetIntensity === 'seuil') color = 'border-amber-500/30 bg-amber-500/10 text-amber-300';
+                if (step.targetIntensity === 'a_fond') color = 'border-rose-500/30 bg-rose-500/10 text-rose-300';
+
+                return (
+                  <div key={idx} className={`p-2.5 rounded-xl border ${color} text-left space-y-1`}>
+                    <div className="flex items-center justify-between font-mono text-[10px] text-stone-400">
+                      <span>Bloc {idx + 1}</span>
+                      <span className="font-bold text-white">{formatSecondsToMinutes(step.durationSec)}</span>
+                    </div>
+                    <div className="font-bold text-white text-xs truncate">{step.title}</div>
+                    <div className="text-[9px] uppercase font-bold tracking-wider opacity-85">
+                      {step.targetIntensity.replace('_', ' ')}
+                    </div>
                   </div>
-                  <div className="font-bold text-white text-xs truncate">{step.title}</div>
-                  <div className="text-[9px] uppercase font-bold tracking-wider opacity-85">
-                    {step.targetIntensity.replace('_', ' ')}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
+                );
+              })}
+            </div>
+          )}
         </div>
 
         {/* Quick Link to Route Explorer */}

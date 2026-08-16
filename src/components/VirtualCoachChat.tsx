@@ -165,7 +165,9 @@ export const VirtualCoachChat: React.FC<VirtualCoachChatProps> = ({
   ];
 
   return (
-    <div className="flex flex-col h-[700px] max-h-[85vh] rounded-2xl bg-stone-900 border border-stone-800 shadow-2xl overflow-hidden">
+    // Hauteur calée sur la fenêtre (dvh tient compte des barres mobiles) : la
+    // conversation défile dans son propre cadre, sans double défilement.
+    <div className="flex flex-col h-[calc(100dvh-13rem)] min-h-[26rem] md:h-[700px] md:max-h-[85vh] rounded-2xl bg-stone-900 border border-stone-800 shadow-2xl overflow-hidden">
       {/* Header Coach Identity */}
       <div className="p-4 sm:p-5 bg-gradient-to-r from-stone-900 via-stone-900 to-amber-950/40 border-b border-stone-800 flex items-center justify-between">
         <div className="flex items-center gap-3">

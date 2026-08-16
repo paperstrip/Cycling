@@ -12,6 +12,7 @@ import { flattenWorkoutPlan, formatTimeDisplay, formatTimeHoursDisplay } from '.
 import { GeoTracker, GeoState } from '../utils/geoTracker';
 import { audioEngine } from '../utils/audioEngine';
 import { generateLiveMotivation } from '../utils/geminiClient';
+import { WorkoutProfileBar } from './WorkoutProfileBar';
 import { VoiceSettingsModal } from './VoiceSettingsModal';
 import {
   Play,
@@ -89,20 +90,43 @@ export const LiveRideScreen: React.FC<LiveRideScreenProps> = ({
   const stepProgressPercent = Math.min(100, (stepElapsedSec / Math.max(1, currentStep.durationSec)) * 100);
   const nextStep: ExecutionStep | undefined = steps[currentStepIndex + 1];
 
-  // Keep screen awake via Screen Wake Lock API
+  // Keep screen awake via Screen Wake Lock API.
+  // iOS/Android libèrent le verrou dès que l'app passe en arrière-plan (écran
+  // verrouillé, changement d'app) : il faut le redemander au retour, sinon
+  // l'écran s'éteint au milieu de la séance.
   useEffect(() => {
+    let isCancelled = false;
+
     async function requestWakeLock() {
       try {
-        if ('wakeLock' in navigator) {
-          wakeLockRef.current = await (navigator as any).wakeLock.request('screen');
+        if ('wakeLock' in navigator && document.visibilityState === 'visible') {
+          const sentinel = await (navigator as any).wakeLock.request('screen');
+          if (isCancelled) {
+            sentinel.release().catch(() => {});
+            return;
+          }
+          wakeLockRef.current = sentinel;
+          sentinel.addEventListener?.('release', () => {
+            wakeLockRef.current = null;
+          });
         }
       } catch (err) {
-        // WakeLock may be rejected if battery is low or not active window
+        // Refusé si la batterie est faible ou la fenêtre inactive : sans gravité.
       }
     }
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible' && !wakeLockRef.current) {
+        requestWakeLock();
+      }
+    };
+
     requestWakeLock();
+    document.addEventListener('visibilitychange', handleVisibilityChange);
 
     return () => {
+      isCancelled = true;
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
       if (wakeLockRef.current) {
         wakeLockRef.current.release().catch(() => {});
         wakeLockRef.current = null;
@@ -387,7 +411,9 @@ export const LiveRideScreen: React.FC<LiveRideScreenProps> = ({
   const digitColor = sunlightMode ? 'text-black' : 'text-amber-400';
 
   return (
-    <div className={`min-h-screen ${themeContainer} flex flex-col justify-between p-3 sm:p-5 select-none transition-colors duration-200`}>
+    <div
+      className={`min-h-screen ${themeContainer} flex flex-col justify-between p-3 sm:p-5 pt-safe pb-safe px-safe select-none transition-colors duration-200`}
+    >
       {/* Top Header Bar */}
       <header className="flex items-center justify-between gap-2 border-b border-stone-800/40 pb-3">
         <div className="flex items-center gap-2 min-w-0">
@@ -575,6 +601,21 @@ export const LiveRideScreen: React.FC<LiveRideScreenProps> = ({
         ) : (
           <div className="max-w-2xl mx-auto w-full p-2.5 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-center text-xs font-bold text-emerald-400">
             🏁 Dernier bloc de la séance !
+          </div>
+        )}
+
+        {/* Position dans la séance : les blocs franchis s'estompent */}
+        {!sunlightMode && (
+          <div className={`max-w-2xl mx-auto w-full p-3 rounded-xl border ${cardBg}`}>
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-[10px] font-black uppercase tracking-wider text-stone-400">
+                Progression de la séance
+              </span>
+              <span className="font-mono text-[10px] text-stone-400">
+                Bloc {currentStepIndex + 1} / {steps.length}
+              </span>
+            </div>
+            <WorkoutProfileBar steps={steps} currentStepIndex={currentStepIndex} />
           </div>
         )}
       </main>

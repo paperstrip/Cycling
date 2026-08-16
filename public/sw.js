@@ -3,36 +3,55 @@
  *
  * Toutes les URLs sont relatives au script : le SW fonctionne donc aussi bien à
  * la racine du domaine qu'à un sous-chemin (GitHub Pages : /Cycling/).
+ *
+ * BUILD_ID et PRECACHE_ASSETS sont remplacés au build par le plugin Vite
+ * `pwaServiceWorker` (voir vite.config.ts).
  */
 
-const CACHE_NAME = 'cyclocoach-v2';
-const ASSETS_TO_CACHE = ['./', './index.html', './manifest.webmanifest', './icon.svg'];
+const BUILD_ID = '__BUILD_ID__';
+const PRECACHE_ASSETS = '__PRECACHE_ASSETS__';
+
+const CACHE_NAME = `cyclocoach-${BUILD_ID}`;
+
+// Coquille de l'app + assets hachés du build : l'app est utilisable hors ligne
+// dès la première visite, sans attendre un second chargement.
+const ASSETS_TO_CACHE = [
+  './',
+  './index.html',
+  './manifest.webmanifest',
+  './icon.svg',
+  './icon-192.png',
+  './icon-512.png',
+  './apple-touch-icon.png',
+].concat(Array.isArray(PRECACHE_ASSETS) ? PRECACHE_ASSETS : []);
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => {
+    caches.open(CACHE_NAME).then((cache) =>
       // addAll échoue en bloc si une seule ressource manque : on tolère les absences.
-      return Promise.all(
-        ASSETS_TO_CACHE.map((url) => cache.add(url).catch(() => undefined))
-      );
-    })
+      Promise.all(ASSETS_TO_CACHE.map((url) => cache.add(url).catch(() => undefined)))
+    )
   );
-  self.skipWaiting();
+  // Pas de skipWaiting() ici : la nouvelle version attend que l'utilisateur
+  // accepte la mise à jour (message SKIP_WAITING ci-dessous).
 });
 
 self.addEventListener('activate', (event) => {
   event.waitUntil(
-    caches.keys().then((keys) => {
-      return Promise.all(
-        keys.map((key) => {
-          if (key !== CACHE_NAME) {
-            return caches.delete(key);
-          }
-        })
-      );
-    })
+    caches
+      .keys()
+      .then((keys) =>
+        Promise.all(keys.map((key) => (key !== CACHE_NAME ? caches.delete(key) : undefined)))
+      )
+      .then(() => self.clients.claim())
   );
-  self.clients.claim();
+});
+
+// Déclenché par l'app quand l'utilisateur accepte la mise à jour.
+self.addEventListener('message', (event) => {
+  if (event.data && event.data.type === 'SKIP_WAITING') {
+    self.skipWaiting();
+  }
 });
 
 self.addEventListener('fetch', (event) => {
