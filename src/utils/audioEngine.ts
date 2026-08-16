@@ -1047,7 +1047,7 @@ class HumanizedAudioEngine {
       personaOverride?: CoachPersona;
       onEnd?: () => void;
       onError?: (err: any) => void;
-      onModelProgress?: (percent: number) => void;
+      onModelProgress?: (percent: number, status: string) => void;
     }
   ): Promise<boolean> {
     if (this.isMuted) {
@@ -1077,7 +1077,7 @@ class HumanizedAudioEngine {
       if (!audioBuffer) {
         const { synthesizeFrench } = await import('./kokoroEngine');
         const { samples, sampleRate } = await synthesizeFrench(textToSpeak, (p) =>
-          options?.onModelProgress?.(p.percent)
+          options?.onModelProgress?.(p.percent, p.status)
         );
         audioBuffer = ctx.createBuffer(1, samples.length, sampleRate);
         audioBuffer.getChannelData(0).set(samples);
@@ -1131,6 +1131,7 @@ class HumanizedAudioEngine {
       engineOverride?: VoiceEngineMode;
       onEnd?: () => void;
       onError?: (err: any) => void;
+      onModelProgress?: (percent: number, status: string) => void;
     }
   ) {
     if (this.isMuted) {
@@ -1155,6 +1156,7 @@ class HumanizedAudioEngine {
       forcedEngine?: VoiceEngineMode;
       onEnd?: () => void;
       onError?: (err: any) => void;
+      onModelProgress?: (percent: number, status: string) => void;
     }
   ) {
     let sample = "Allez champion, on s'accroche ! Relance souple à 95 tours par minute, buste stable !";
@@ -1176,6 +1178,7 @@ class HumanizedAudioEngine {
       engineOverride: options?.forcedEngine,
       onEnd: options?.onEnd,
       onError: options?.onError,
+      onModelProgress: options?.onModelProgress,
     });
   }
 

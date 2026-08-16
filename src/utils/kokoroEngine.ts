@@ -46,6 +46,19 @@ export interface KokoroAudio {
 let ttsInstance: any = null;
 let loadingPromise: Promise<any> | null = null;
 
+/** Octets téléchargés par fichier, pour une progression globale cohérente. */
+const downloaded: Record<string, { loaded: number; total: number }> = {};
+
+/** Sans limite, un téléchargement bloqué laisse l'interface figée sans explication. */
+const MODEL_LOAD_TIMEOUT_MS = 5 * 60 * 1000;
+
+function withTimeout<T>(promise: Promise<T>, ms: number, message: string): Promise<T> {
+  return Promise.race([
+    promise,
+    new Promise<T>((_, reject) => setTimeout(() => reject(new Error(message)), ms)),
+  ]);
+}
+
 export function isKokoroLoaded(): boolean {
   return ttsInstance !== null;
 }
@@ -62,19 +75,40 @@ export async function loadKokoro(onProgress?: (p: KokoroProgress) => void): Prom
   loadingPromise = (async () => {
     const { KokoroTTS } = await import('kokoro-js');
 
-    // WebGPU si disponible (iOS 26+, navigateurs récents), sinon WebAssembly.
-    const hasWebGpu = typeof navigator !== 'undefined' && 'gpu' in navigator;
+    // Quantification 8 bits : ~86 Mo, contre ~326 Mo en fp32. Sur un téléphone
+    // en 4G, fp32 est inutilisable — le téléchargement n'aboutit pas et rien
+    // n'indique la cause. La perte de qualité est marginale pour des phrases
+    // courtes, et le préchargement compense la lenteur du WebAssembly.
+    const tts = await withTimeout(
+      KokoroTTS.from_pretrained(MODEL_ID, {
+        dtype: 'q8',
+        device: 'wasm',
+        progress_callback: (p: any) => {
+          if (!onProgress) return;
 
-    const tts = await KokoroTTS.from_pretrained(MODEL_ID, {
-      dtype: hasWebGpu ? 'fp32' : 'q8',
-      device: hasWebGpu ? 'webgpu' : 'wasm',
-      progress_callback: (p: any) => {
-        if (!onProgress) return;
-        const percent =
-          typeof p?.progress === 'number' ? Math.round(p.progress) : p?.status === 'done' ? 100 : 0;
-        onProgress({ percent, status: p?.status || 'chargement' });
-      },
-    } as any);
+          // transformers.js émet une progression par fichier : on cumule les
+          // octets pour afficher une progression globale qui ne recule pas.
+          if (p?.status === 'progress' && p.file && typeof p.total === 'number') {
+            downloaded[p.file] = { loaded: p.loaded || 0, total: p.total };
+          }
+          const files = Object.values(downloaded);
+          const loaded = files.reduce((a, f) => a + f.loaded, 0);
+          const total = files.reduce((a, f) => a + f.total, 0);
+          const percent = total > 0 ? Math.round((loaded / total) * 100) : 0;
+
+          onProgress({
+            percent,
+            status:
+              total > 0
+                ? `${(loaded / 1048576).toFixed(0)} / ${(total / 1048576).toFixed(0)} Mo`
+                : p?.status || 'préparation',
+          });
+        },
+      } as any),
+      MODEL_LOAD_TIMEOUT_MS,
+      "Le téléchargement du modèle vocal n'a pas abouti dans le temps imparti. "
+        + 'Réessayez en Wi-Fi : le modèle pèse environ 86 Mo.',
+    );
 
     // La voix française n'est pas déclarée dans la table de la librairie, alors
     // que le modèle la fournit. `voices` étant exposé par référence, on peut

@@ -40,6 +40,8 @@ export const VoiceSettingsModal: React.FC<VoiceSettingsModalProps> = ({
   // Conservé jusqu'au test suivant : le message transitoire était effacé par le
   // onEnd du repli vocal, donc juste après la fin de la phrase entendue.
   const [lastFailureReason, setLastFailureReason] = useState<string | null>(null);
+  // Progression du téléchargement du modèle Kokoro pendant un test.
+  const [kokoroProgress, setKokoroProgress] = useState<string | null>(null);
   const [diagnostics, setDiagnostics] = useState<ReturnType<
     typeof audioEngine.getAudioDiagnostics
   > | null>(null);
@@ -82,6 +84,7 @@ export const VoiceSettingsModal: React.FC<VoiceSettingsModalProps> = ({
     audioEngine.unlockAudio();
     setDiagnostics(audioEngine.getAudioDiagnostics());
     setLastFailureReason(null);
+    setKokoroProgress(null);
     setIsPlayingSample(true);
     setActiveSampleType(sampleType);
     setTestStatusMessage(
@@ -94,10 +97,14 @@ export const VoiceSettingsModal: React.FC<VoiceSettingsModalProps> = ({
 
     audioEngine.testVoice(sampleType, {
       forcedEngine,
+      onModelProgress: (percent: number, status: string) => {
+        setKokoroProgress(`${percent} % — ${status}`);
+      },
       onEnd: () => {
         setIsPlayingSample(false);
         setActiveSampleType(null);
         setTestStatusMessage(null);
+        setKokoroProgress(null);
       },
       onError: (err: any) => {
         const msg = err?.message || String(err || '');
@@ -123,13 +130,21 @@ export const VoiceSettingsModal: React.FC<VoiceSettingsModalProps> = ({
         const source = isKokoro ? 'Détail technique' : 'Réponse de Google';
         setLastFailureReason(`${human}\n\n${source} : ${msg.slice(0, 300) || '(vide)'}`);
         setTestStatusMessage(null);
+        setKokoroProgress(null);
       },
     });
 
+    // Un téléchargement de modèle dure bien plus de 7 s : on ne masque
+    // l'indicateur que si rien n'est en cours.
     setTimeout(() => {
-      setIsPlayingSample(false);
-      setActiveSampleType(null);
-      setTestStatusMessage(null);
+      setKokoroProgress((current) => {
+        if (current === null) {
+          setIsPlayingSample(false);
+          setActiveSampleType(null);
+          setTestStatusMessage(null);
+        }
+        return current;
+      });
     }, 7000);
   };
 
@@ -364,6 +379,21 @@ export const VoiceSettingsModal: React.FC<VoiceSettingsModalProps> = ({
               </span>
             )}
           </div>
+
+          {/* Téléchargement du modèle Kokoro en cours */}
+          {kokoroProgress && (
+            <div className="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/40 flex items-center gap-2.5">
+              <Loader2 className="w-4 h-4 shrink-0 text-emerald-400 animate-spin" />
+              <div className="flex-1 min-w-0">
+                <div className="text-[11px] font-black text-emerald-300">
+                  Téléchargement du modèle vocal — {kokoroProgress}
+                </div>
+                <p className="text-[10px] text-stone-400 mt-0.5">
+                  Environ 86 Mo, une seule fois. Gardez l'app ouverte.
+                </p>
+              </div>
+            </div>
+          )}
 
           {/* Cause du dernier échec vocal, conservée jusqu'au test suivant. */}
           {lastFailureReason && (
