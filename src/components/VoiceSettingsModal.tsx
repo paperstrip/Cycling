@@ -37,6 +37,9 @@ export const VoiceSettingsModal: React.FC<VoiceSettingsModalProps> = ({
   const [isPlayingSample, setIsPlayingSample] = useState<boolean>(false);
   const [activeSampleType, setActiveSampleType] = useState<string | null>(null);
   const [testStatusMessage, setTestStatusMessage] = useState<string | null>(null);
+  // Conservé jusqu'au test suivant : le message transitoire était effacé par le
+  // onEnd du repli vocal, donc juste après la fin de la phrase entendue.
+  const [lastFailureReason, setLastFailureReason] = useState<string | null>(null);
   const [diagnostics, setDiagnostics] = useState<ReturnType<
     typeof audioEngine.getAudioDiagnostics
   > | null>(null);
@@ -78,6 +81,7 @@ export const VoiceSettingsModal: React.FC<VoiceSettingsModalProps> = ({
     const engine = forcedEngine || settings.engineMode;
     audioEngine.unlockAudio();
     setDiagnostics(audioEngine.getAudioDiagnostics());
+    setLastFailureReason(null);
     setIsPlayingSample(true);
     setActiveSampleType(sampleType);
     setTestStatusMessage(
@@ -95,17 +99,21 @@ export const VoiceSettingsModal: React.FC<VoiceSettingsModalProps> = ({
       },
       onError: (err: any) => {
         const msg = err?.message || String(err || '');
+        let human: string;
         if (msg.includes('429') || msg.includes('Quota') || msg.includes('RESOURCE_EXHAUSTED')) {
-          setTestStatusMessage('⚠️ Quota Gemini atteint — bascule sur la synthèse locale');
-        } else if (msg.includes('clé API') || msg.includes('API key') || msg.includes('API_KEY')) {
-          setTestStatusMessage('⚠️ Clé Gemini absente ou refusée — voix locale utilisée');
-        } else if (msg.includes('404') || msg.includes('not found') || msg.includes('NOT_FOUND')) {
-          setTestStatusMessage('⚠️ Modèle vocal Gemini indisponible sur cette clé — voix locale');
+          human =
+            'Quota Gemini atteint pour la voix IA. Le modèle TTS est en préversion : '
+            + 'son quota gratuit est très bas et se réinitialise après quelques minutes.';
+        } else if (msg.includes('API key') || msg.includes('API_KEY') || msg.includes('401') || msg.includes('403')) {
+          human = 'Clé Gemini refusée pour la voix IA (clé absente, invalide ou sans accès au modèle TTS).';
+        } else if (msg.includes('404') || msg.includes('NOT_FOUND') || msg.includes('not found')) {
+          human = "Le modèle vocal Gemini n'est pas accessible avec cette clé.";
         } else {
-          // Message brut : indispensable pour diagnostiquer sur téléphone.
-          setTestStatusMessage(`⚠️ ${msg.slice(0, 140) || 'Erreur inconnue'}`);
+          human = msg || 'Erreur inconnue';
         }
-        setTimeout(() => setTestStatusMessage(null), 9000);
+        // Réponse brute conservée : c'est elle qui permet de trancher.
+        setLastFailureReason(`${human}\n\nRéponse de Google : ${msg.slice(0, 300) || '(vide)'}`);
+        setTestStatusMessage(null);
       },
     });
 
@@ -347,6 +355,18 @@ export const VoiceSettingsModal: React.FC<VoiceSettingsModalProps> = ({
               </span>
             )}
           </div>
+
+          {/* Cause du dernier échec vocal, conservée jusqu'au test suivant. */}
+          {lastFailureReason && (
+            <div className="p-3 rounded-xl bg-rose-500/10 border border-rose-500/40 space-y-1.5">
+              <div className="text-[11px] font-black uppercase tracking-wider text-rose-400">
+                Voix IA indisponible — repli sur la voix du navigateur
+              </div>
+              <p className="text-[11px] text-stone-300 whitespace-pre-line leading-relaxed break-words">
+                {lastFailureReason}
+              </p>
+            </div>
+          )}
 
           {/* Diagnostic audio : permet d'identifier une panne sans console. */}
           {diagnostics && (
