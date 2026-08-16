@@ -1,0 +1,18 @@
+{
+  "name": "CycloCoach - Entraîneur Cycliste",
+  "short_name": "CycloCoach",
+  "description": "Coaching cycliste vocal en direct et suivi GPS par intervalles",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0c0a09",
+  "theme_color": "#f59e0b",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "192x192 512x512",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

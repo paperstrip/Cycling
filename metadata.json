@@ -1,0 +1,10 @@
+{
+  "name": "CycloCoach",
+  "description": "Application de coaching cycliste vocal en temps réel avec suivi GPS, plans d'entraînement personnalisés et analyse d'effort.",
+  "requestFramePermissions": [
+    "geolocation"
+  ],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
