@@ -37,6 +37,9 @@ export const VoiceSettingsModal: React.FC<VoiceSettingsModalProps> = ({
   const [isPlayingSample, setIsPlayingSample] = useState<boolean>(false);
   const [activeSampleType, setActiveSampleType] = useState<string | null>(null);
   const [testStatusMessage, setTestStatusMessage] = useState<string | null>(null);
+  const [diagnostics, setDiagnostics] = useState<ReturnType<
+    typeof audioEngine.getAudioDiagnostics
+  > | null>(null);
 
   useEffect(() => {
     if (isOpen) {
@@ -49,6 +52,14 @@ export const VoiceSettingsModal: React.FC<VoiceSettingsModalProps> = ({
       if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
         window.speechSynthesis.onvoiceschanged = loadVoices;
       }
+
+      // Rafraîchi en continu : l'état de l'AudioContext change au fil des gestes.
+      setDiagnostics(audioEngine.getAudioDiagnostics());
+      const timer = setInterval(
+        () => setDiagnostics(audioEngine.getAudioDiagnostics()),
+        1000,
+      );
+      return () => clearInterval(timer);
     }
   }, [isOpen]);
 
@@ -66,6 +77,7 @@ export const VoiceSettingsModal: React.FC<VoiceSettingsModalProps> = ({
   ) => {
     const engine = forcedEngine || settings.engineMode;
     audioEngine.unlockAudio();
+    setDiagnostics(audioEngine.getAudioDiagnostics());
     setIsPlayingSample(true);
     setActiveSampleType(sampleType);
     setTestStatusMessage(
@@ -335,6 +347,41 @@ export const VoiceSettingsModal: React.FC<VoiceSettingsModalProps> = ({
               </span>
             )}
           </div>
+
+          {/* Diagnostic audio : permet d'identifier une panne sans console. */}
+          {diagnostics && (
+            <div className="p-2.5 rounded-xl bg-stone-950 border border-stone-800 font-mono text-[10px] text-stone-400 flex flex-wrap gap-x-3 gap-y-1">
+              <span>
+                AudioContext :{' '}
+                <strong
+                  className={
+                    diagnostics.contextState === 'running' ? 'text-emerald-400' : 'text-rose-400'
+                  }
+                >
+                  {diagnostics.contextState}
+                </strong>
+              </span>
+              <span>
+                Session média :{' '}
+                <strong
+                  className={
+                    diagnostics.mediaSession === 'active' ? 'text-emerald-400' : 'text-rose-400'
+                  }
+                >
+                  {diagnostics.mediaSession}
+                </strong>
+              </span>
+              <span>
+                Clé Gemini :{' '}
+                <strong className={diagnostics.hasGeminiKey ? 'text-emerald-400' : 'text-rose-400'}>
+                  {diagnostics.hasGeminiKey ? 'oui' : 'non'}
+                </strong>
+              </span>
+              <span>
+                Voix FR : <strong className="text-stone-300">{diagnostics.frenchVoices}</strong>
+              </span>
+            </div>
+          )}
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
             {/* Mode 1: Gemini Neural Studio (Default & Recommended) */}

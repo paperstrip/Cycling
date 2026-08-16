@@ -279,6 +279,37 @@ class HumanizedAudioEngine {
     return this.cachedVoices;
   }
 
+  /**
+   * État réel de la chaîne audio, affiché dans le panneau Oreillette.
+   * Indispensable pour diagnostiquer sur un téléphone, sans console.
+   */
+  public getAudioDiagnostics(): {
+    contextState: string;
+    mediaSession: string;
+    hasGeminiKey: boolean;
+    engine: string;
+    frenchVoices: number;
+  } {
+    let contextState = 'non créé';
+    try {
+      if (this.audioCtx) contextState = this.audioCtx.state;
+    } catch (e) {
+      contextState = 'erreur';
+    }
+
+    let mediaSession = 'inactive';
+    const el = this.mediaSessionKeepAlive;
+    if (el) mediaSession = el.paused ? 'en pause' : 'active';
+
+    return {
+      contextState,
+      mediaSession,
+      hasGeminiKey: hasApiKey(),
+      engine: this.settings.engineMode,
+      frenchVoices: this.cachedVoices.length,
+    };
+  }
+
   public getSettings(): VoiceSettings {
     return { ...this.settings };
   }
