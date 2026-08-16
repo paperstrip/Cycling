@@ -82,13 +82,18 @@ export const VoiceSettingsModal: React.FC<VoiceSettingsModalProps> = ({
         setTestStatusMessage(null);
       },
       onError: (err: any) => {
-        const msg = err?.message || '';
-        if (msg.includes('429') || msg.includes('Quota')) {
-          setTestStatusMessage('⚠️ Quota Gemini atteint - bascule synthèse locale');
+        const msg = err?.message || String(err || '');
+        if (msg.includes('429') || msg.includes('Quota') || msg.includes('RESOURCE_EXHAUSTED')) {
+          setTestStatusMessage('⚠️ Quota Gemini atteint — bascule sur la synthèse locale');
+        } else if (msg.includes('clé API') || msg.includes('API key') || msg.includes('API_KEY')) {
+          setTestStatusMessage('⚠️ Clé Gemini absente ou refusée — voix locale utilisée');
+        } else if (msg.includes('404') || msg.includes('not found') || msg.includes('NOT_FOUND')) {
+          setTestStatusMessage('⚠️ Modèle vocal Gemini indisponible sur cette clé — voix locale');
         } else {
-          setTestStatusMessage('⚠️ Note : bascule synthèse locale');
+          // Message brut : indispensable pour diagnostiquer sur téléphone.
+          setTestStatusMessage(`⚠️ ${msg.slice(0, 140) || 'Erreur inconnue'}`);
         }
-        setTimeout(() => setTestStatusMessage(null), 4000);
+        setTimeout(() => setTestStatusMessage(null), 9000);
       },
     });
 

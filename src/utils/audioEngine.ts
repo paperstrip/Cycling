@@ -9,8 +9,13 @@
 
 import { VoiceSettings, CoachPersona, IntensityZone, RadioAmbienceStyle, VoiceEngineMode } from '../types';
 import { getStoredVoiceSettings, saveStoredVoiceSettings, DEFAULT_VOICE_SETTINGS } from './profileStorage';
+
 import { hasApiKey } from './apiKey';
 import { synthesizeSpeech } from './geminiClient';
+
+/** WAV silencieux de 100 ms, utilisé pour ouvrir la session audio média sur iOS. */
+const SILENT_WAV_DATA_URI =
+  'data:audio/wav;base64,UklGRmQGAABXQVZFZm10IBAAAAABAAEAQB8AAIA+AAACABAAZGF0YUAGAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
 
 /**
  * Transforms technical cycling text into natural, spoken French with human rhythm
@@ -315,8 +320,54 @@ class HumanizedAudioEngine {
     this.isSpeaking = false;
   }
 
+  /**
+   * Boucle audio silencieuse.
+   *
+   * Sur iOS, tout le son passant par l'AudioContext est coupé par
+   * l'interrupteur silencieux physique de l'iPhone. Lire un élément <audio>
+   * HTML place la session audio en catégorie "lecture média", ce qui route le
+   * son sur le canal média : le coach reste audible même sonnerie coupée, et
+   * la session ne s'endort pas entre deux consignes.
+   */
+  private mediaSessionKeepAlive: HTMLAudioElement | null = null;
+
+  private startMediaSession() {
+    if (typeof window === 'undefined') return;
+    try {
+      if (!this.mediaSessionKeepAlive) {
+        const el = document.createElement('audio');
+        el.src = SILENT_WAV_DATA_URI;
+        el.loop = true;
+        el.volume = 0.001;
+        (el as any).playsInline = true;
+        el.setAttribute('playsinline', '');
+        el.setAttribute('aria-hidden', 'true');
+        el.style.display = 'none';
+        // Attaché au document : iOS ignore parfois les éléments média détachés.
+        document.body.appendChild(el);
+        this.mediaSessionKeepAlive = el;
+      }
+      const playPromise = this.mediaSessionKeepAlive.play();
+      if (playPromise && typeof playPromise.catch === 'function') {
+        // Refusé hors geste utilisateur : sans gravité, on retentera au suivant.
+        playPromise.catch(() => {});
+      }
+    } catch (e) {
+      console.warn('Session média silencieuse indisponible:', e);
+    }
+  }
+
+  public stopMediaSession() {
+    try {
+      this.mediaSessionKeepAlive?.pause();
+    } catch (e) {}
+  }
+
   public unlockAudio() {
     if (typeof window === 'undefined') return;
+
+    // Doit être déclenché par un geste utilisateur pour être accepté par iOS.
+    this.startMediaSession();
 
     try {
       const ctx = this.getAudioContext();
@@ -717,6 +768,9 @@ class HumanizedAudioEngine {
 
     // Sans clé Gemini configurée, on utilise directement la voix locale du navigateur.
     if (!hasApiKey()) {
+      if (options?.onError) {
+        options.onError(new Error('Aucune clé API Gemini enregistrée'));
+      }
       this.speakViaSpeechSynthesis(rawText, options);
       return false;
     }
