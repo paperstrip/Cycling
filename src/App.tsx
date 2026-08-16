@@ -18,7 +18,7 @@ import { VoiceSettingsModal } from './components/VoiceSettingsModal';
 import { OnboardingModal } from './components/OnboardingModal';
 import { ApiKeyModal } from './components/ApiKeyModal';
 import { BottomNav, NAV_ITEMS } from './components/BottomNav';
-import { PwaStatusBar } from './components/PwaStatusBar';
+import { PwaStatusBar, PwaInstallPrompt } from './components/PwaStatusBar';
 import { audioEngine } from './utils/audioEngine';
 import { hasApiKey } from './utils/apiKey';
 import {
@@ -179,11 +179,15 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-stone-950 text-white flex flex-col selection:bg-amber-500 selection:text-stone-950 font-sans">
-      {/* Bandeaux PWA : mise à jour, hors connexion, installation */}
-      <PwaStatusBar />
+      {/* Zone haute collante : bandeaux PWA puis en-tête.
+          Un seul conteneur collant porte la marge de sécurité de l'encoche —
+          deux éléments en sticky top-0 se superposeraient, et un bandeau sans
+          marge haute passerait sous la barre d'état iOS. */}
+      <div className="sticky top-0 z-40 bg-stone-950 pt-safe px-safe">
+        <PwaStatusBar />
 
-      {/* Top Main Navigation Header */}
-      <header className="sticky top-0 z-40 bg-stone-950/90 backdrop-blur-md border-b border-stone-800 pt-safe px-safe">
+        {/* Top Main Navigation Header */}
+        <header className="bg-stone-950/90 backdrop-blur-md border-b border-stone-800">
         <div className="max-w-7xl mx-auto px-4 sm:px-6">
           <div className="flex items-center justify-between h-14 sm:h-18 gap-3">
             {/* Logo and App Title */}
@@ -277,7 +281,8 @@ export default function App() {
           </div>
 
         </div>
-      </header>
+        </header>
+      </div>
 
       {/* Main Body Content Container */}
       <main className="max-w-7xl mx-auto px-4 sm:px-6 py-5 sm:py-8 w-full flex-1 px-safe pb-nav">
@@ -413,6 +418,10 @@ export default function App() {
 
       {/* Barre de navigation basse (mobile) */}
       <BottomNav activeTab={activeTab} onSelect={setActiveTab} />
+
+      {/* Invite d'installation : hors de l'en-tête collant pour passer
+          au-dessus de la barre de navigation basse. */}
+      <PwaInstallPrompt />
 
       {/* Calibration / Onboarding Wizard Modal */}
       <OnboardingModal
