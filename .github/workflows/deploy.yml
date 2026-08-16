@@ -45,12 +45,11 @@ jobs:
       - name: Fallback SPA (404.html)
         run: cp dist/index.html dist/404.html
 
+      # Prérequis (une seule fois) : Settings → Pages → Source : GitHub Actions.
+      # L'activation ne peut pas être automatisée ici : créer le site Pages via
+      # l'API exige un jeton admin, que le GITHUB_TOKEN du workflow n'est pas.
       - name: Configuration de Pages
         uses: actions/configure-pages@v5
-        with:
-          # Active Pages automatiquement si ce n'est pas déjà fait, pour éviter
-          # une configuration manuelle dans les réglages du dépôt.
-          enablement: true
 
       - name: Envoi de l'artefact
         uses: actions/upload-pages-artifact@v3
