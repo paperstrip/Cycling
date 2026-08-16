@@ -30,15 +30,6 @@ export function getStoredVoiceSettings(): VoiceSettings {
     if (raw) {
       const stored = { ...DEFAULT_VOICE_SETTINGS, ...JSON.parse(raw) } as VoiceSettings;
 
-      // Le moteur Kokoro local a été retiré : sans phonémiseur français
-      // exécutable dans le navigateur, il échouait systématiquement. Les
-      // réglages déjà enregistrés doivent basculer, sinon l'utilisateur reste
-      // sur un moteur inopérant et l'option n'est plus sélectionnable.
-      if ((stored.engineMode as string) === 'kokoro_local') {
-        stored.engineMode = 'gemini_neural';
-        saveStoredVoiceSettings(stored);
-      }
-
       return stored;
     }
   } catch (e) {

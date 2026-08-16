@@ -492,26 +492,53 @@ export const VoiceSettingsModal: React.FC<VoiceSettingsModalProps> = ({
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
             {/* Mode 0 : Kokoro local — gratuit, illimité, hors connexion */}
-            {/* Kokoro local : indisponible en français, faute de phonémiseur.
-                La carte reste visible mais désactivée, plutôt que de proposer
-                une option qui échouerait systématiquement. */}
-            <div className="p-3.5 rounded-2xl border border-stone-800 bg-stone-950/60 text-left flex flex-col justify-between sm:col-span-2 opacity-70">
+            {/* Kokoro local, avec phonémisation française par eSpeak NG complet. */}
+            <div
+              onClick={() => handleUpdate({ engineMode: 'kokoro_local' })}
+              className={`p-3.5 rounded-2xl border text-left transition-all cursor-pointer flex flex-col justify-between sm:col-span-2 ${
+                settings.engineMode === 'kokoro_local'
+                  ? 'border-emerald-500 bg-emerald-500/10 text-white ring-1 ring-emerald-500 shadow-md'
+                  : 'bg-stone-950 border-stone-800 text-stone-400 hover:border-stone-700'
+              }`}
+            >
               <div>
-                <div className="flex items-center justify-between font-bold text-xs gap-2">
-                  <span className="flex items-center gap-1.5 text-stone-400">
+                <div className="flex items-center justify-between font-bold text-xs text-white gap-2">
+                  <span className="flex items-center gap-1.5 text-emerald-400">
                     <Smartphone className="w-3.5 h-3.5" />
                     Voix française locale (Kokoro)
                   </span>
-                  <span className="text-[10px] bg-stone-800 text-stone-400 px-1.5 py-0.5 rounded font-black shrink-0">
-                    INDISPONIBLE
-                  </span>
+                  {settings.engineMode === 'kokoro_local' ? (
+                    <span className="text-[10px] bg-emerald-500 text-stone-950 px-1.5 py-0.2 rounded font-black shrink-0">
+                      SÉLECTIONNÉ
+                    </span>
+                  ) : (
+                    <span className="text-[10px] text-stone-500 font-mono shrink-0">
+                      Cliquer pour choisir
+                    </span>
+                  )}
                 </div>
-                <p className="text-[11px] text-stone-400 mt-1 leading-snug">
-                  Le modèle possède une voix française, mais le phonémiseur exécutable dans le
-                  navigateur ne fournit que l'anglais : le texte français serait prononcé avec les
-                  règles anglaises. Le support multilingue est annoncé en développement côté
-                  bibliothèque.
+                <p className="text-[11px] text-stone-300 mt-1 leading-snug">
+                  Tourne sur le téléphone : gratuit, sans quota, sans clé, hors connexion.
+                  Téléchargement au premier usage (~110 Mo : modèle + dictionnaires de
+                  prononciation), à faire en Wi-Fi.
                 </p>
+                <p className="text-[10px] text-amber-300/80 mt-1.5 leading-snug">
+                  Voix Siwis, féminine. Repli automatique sur la voix du navigateur en cas d'échec.
+                </p>
+              </div>
+              <div className="flex items-center justify-between mt-2.5 pt-2 border-t border-stone-800">
+                <span className="text-[10px] font-mono text-emerald-400">Gratuit & illimité</span>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleTest('effort', 'kokoro_local');
+                  }}
+                  disabled={isPlayingSample}
+                  className="px-3 py-1.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 disabled:opacity-50 text-stone-950 text-[11px] font-black flex items-center gap-1 cursor-pointer"
+                >
+                  <Play className="w-3 h-3 fill-stone-950" />
+                  Tester Kokoro
+                </button>
               </div>
             </div>
 

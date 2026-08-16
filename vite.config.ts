@@ -47,6 +47,24 @@ function pwaServiceWorker(): Plugin {
 
       fs.writeFileSync(swPath, source);
       console.log(`  sw.js  ${assets.length} assets préchargés (build ${buildId})`);
+
+      // Données de prononciation eSpeak NG (toutes langues, dont le français).
+      // Elles doivent être servies À CÔTÉ du chunk JS du moteur : Emscripten
+      // résout ce fichier relativement à l'URL de son script et ignore
+      // l'option locateFile pour le paquet de données.
+      const espeakData = path.resolve(
+        __dirname,
+        'node_modules/@echogarden/espeak-ng-emscripten/espeak-ng.data',
+      );
+      if (fs.existsSync(espeakData)) {
+        const assetsDir = path.join(outDir, 'assets');
+        fs.mkdirSync(assetsDir, { recursive: true });
+        fs.copyFileSync(espeakData, path.join(assetsDir, 'espeak-ng.data'));
+        const mo = (fs.statSync(espeakData).size / 1048576).toFixed(0);
+        console.log(`  espeak-ng.data  ${mo} Mo copiés dans assets/`);
+      } else {
+        console.warn('  espeak-ng.data introuvable : la voix française locale sera indisponible');
+      }
     },
   };
 }

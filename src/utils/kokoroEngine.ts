@@ -15,8 +15,8 @@
  * phonémisée en anglais, ce qui donnerait du charabia sur du texte français.
  *
  * On court-circuite donc son chemin par défaut :
- *   1. phonémisation du texte avec `phonemizer` en `fr` (les données eSpeak
- *      françaises sont bien présentes dans le paquet) ;
+ *   1. phonémisation du texte par un build eSpeak NG complet, embarquant les
+ *      dictionnaires français (voir `frenchPhonemizer.ts`) ;
  *   2. injection de la voix française `ff_siwis` dans la table des voix, que
  *      `get voices()` expose par référence ;
  *   3. appel de `generate_from_ids()`, API publique qui prend des identifiants
@@ -178,15 +178,16 @@ export async function synthesizeFrench(
   const clean = text.trim();
   if (!clean) throw new Error('Texte vide');
 
-  // 1. Phonèmes français, produits hors de kokoro-js.
+  // 1. Phonèmes français, produits par un build eSpeak NG complet.
+  //    Le phonémiseur livré avec kokoro-js ne connaît que l'anglais et rejette
+  //    la langue « fr » : c'était la seule pièce manquante.
   onProgress?.({ percent: 100, status: 'phonémisation…' });
-  const { phonemize } = await import('phonemizer');
-  const phonemeChunks: string[] = await withTimeout(
-    phonemize(clean, 'fr'),
+  const { phonemizeFrench } = await import('./frenchPhonemizer');
+  const phonemes = await withTimeout(
+    phonemizeFrench(clean),
     SYNTHESIS_TIMEOUT_MS,
     "La phonémisation française n'a pas abouti.",
   );
-  const phonemes = Array.isArray(phonemeChunks) ? phonemeChunks.join(' ') : String(phonemeChunks);
   if (!phonemes.trim()) throw new Error('Phonémisation française vide');
 
   // 2. Tokenisation des phonèmes (et non du texte brut).
