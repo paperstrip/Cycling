@@ -34,14 +34,40 @@ export const RidePreparationModal: React.FC<RidePreparationModalProps> = ({
   const [progress, setProgress] = useState<PrefetchProgress | null>(null);
   const [isDone, setIsDone] = useState(false);
   const [warning, setWarning] = useState<string | null>(null);
+  // Progression du téléchargement du modèle Kokoro (distinct des consignes).
+  const [modelPercent, setModelPercent] = useState<number | null>(null);
   const cancelSignal = useRef({ cancelled: false });
 
   useEffect(() => {
     if (!isOpen) return;
 
+    const engine = audioEngine.getSettings().engineMode;
+
+    // Kokoro : rien à télécharger phrase par phrase, mais le modèle lui-même
+    // doit être chargé avant le départ — sinon la première consigne attendrait
+    // plusieurs dizaines de secondes.
+    if (engine === 'kokoro_local') {
+      setProgress({ done: 0, total: 1, fromCache: 0, failed: 0, currentText: null });
+      import('../utils/kokoroEngine')
+        .then(({ loadKokoro }) =>
+          loadKokoro((p) => setModelPercent(p.percent)),
+        )
+        .then(() => {
+          if (!cancelSignal.current.cancelled) setIsDone(true);
+        })
+        .catch((err) => {
+          if (cancelSignal.current.cancelled) return;
+          setIsDone(true);
+          setWarning(
+            `Modèle vocal Kokoro indisponible (${err?.message || 'erreur'}). La voix du navigateur prendra le relais.`,
+          );
+        });
+      return;
+    }
+
     // Sans clé Gemini, aucune voix à précharger : la voix du navigateur est
     // synthétisée localement et n'a aucune latence.
-    if (!hasApiKey() || audioEngine.getSettings().engineMode !== 'gemini_neural') {
+    if (!hasApiKey() || engine !== 'gemini_neural') {
       onReady();
       return;
     }
@@ -116,12 +142,16 @@ export const RidePreparationModal: React.FC<RidePreparationModalProps> = ({
           <div className="h-2 rounded-full bg-stone-950 border border-stone-800 overflow-hidden">
             <div
               className="h-full bg-amber-500 transition-all duration-300"
-              style={{ width: `${isDone ? 100 : percent}%` }}
+              style={{ width: `${isDone ? 100 : (modelPercent ?? percent)}%` }}
             />
           </div>
           <div className="flex items-center justify-between font-mono text-[11px] text-stone-400">
             <span>
-              {progress ? `${progress.done} / ${progress.total} consignes` : 'Analyse du plan…'}
+              {modelPercent !== null
+                ? `Modèle vocal ${modelPercent} %`
+                : progress
+                  ? `${progress.done} / ${progress.total} consignes`
+                  : 'Analyse du plan…'}
             </span>
             {progress && progress.fromCache > 0 && (
               <span className="text-emerald-400">{progress.fromCache} déjà en cache</span>

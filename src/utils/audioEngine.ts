@@ -1034,6 +1034,94 @@ class HumanizedAudioEngine {
     }
   }
 
+  /**
+   * Voix Kokoro synthétisée localement (gratuite, illimitée, hors connexion).
+   * Le rendu passe par la même chaîne radio que Gemini, et un échec bascule
+   * sur la synthèse du navigateur comme pour les autres moteurs.
+   */
+  public async speakViaKokoro(
+    rawText: string,
+    options?: {
+      priority?: 'high' | 'normal';
+      intensity?: IntensityZone;
+      personaOverride?: CoachPersona;
+      onEnd?: () => void;
+      onError?: (err: any) => void;
+      onModelProgress?: (percent: number) => void;
+    }
+  ): Promise<boolean> {
+    if (this.isMuted) {
+      if (options?.onEnd) options.onEnd();
+      return true;
+    }
+
+    const ctx = this.getAudioContext();
+    if (!ctx) {
+      if (options?.onError) options.onError(new Error('AudioContext indisponible'));
+      this.speakViaSpeechSynthesis(rawText, options);
+      return false;
+    }
+    if (ctx.state === 'suspended') {
+      try {
+        await ctx.resume();
+      } catch (e) {}
+    }
+    if (options?.priority === 'high') this.stopCurrentAudio();
+
+    const textToSpeak = this.settings.naturalProsody ? normalizeTextForSpeech(rawText) : rawText;
+    const cacheKey = `kokoro_${textToSpeak}`;
+
+    try {
+      let audioBuffer = this.audioBufferCache.get(cacheKey) || null;
+
+      if (!audioBuffer) {
+        const { synthesizeFrench } = await import('./kokoroEngine');
+        const { samples, sampleRate } = await synthesizeFrench(textToSpeak, (p) =>
+          options?.onModelProgress?.(p.percent)
+        );
+        audioBuffer = ctx.createBuffer(1, samples.length, sampleRate);
+        audioBuffer.getChannelData(0).set(samples);
+        this.rememberBuffer(cacheKey, audioBuffer);
+      }
+
+      this.playRadioChirp('start');
+      this.startRadioCarrier();
+
+      const source = ctx.createBufferSource();
+      const gainNode = ctx.createGain();
+      const dspChain = this.createRadioDspChain(ctx);
+
+      source.buffer = audioBuffer;
+      source.playbackRate.setValueAtTime(this.settings.speedRate || 1.0, ctx.currentTime);
+      gainNode.gain.setValueAtTime(
+        Math.max(0.1, Math.min(1.0, this.settings.volume || 1.0)),
+        ctx.currentTime
+      );
+
+      source.connect(dspChain.input);
+      dspChain.output.connect(gainNode);
+      gainNode.connect(ctx.destination);
+
+      this.currentSourceNode = source;
+      this.isSpeaking = true;
+      source.onended = () => {
+        this.isSpeaking = false;
+        this.currentSourceNode = null;
+        this.stopRadioCarrier();
+        this.playRadioChirp('end');
+        if (options?.onEnd) options.onEnd();
+      };
+      source.start();
+      return true;
+    } catch (err: any) {
+      console.warn('Voix Kokoro indisponible, bascule sur la synthèse locale:', err);
+      if (options?.onError) options.onError(err);
+      this.stopRadioCarrier();
+      this.speakViaSpeechSynthesis(rawText, options);
+      return false;
+    }
+  }
+
   public speak(
     rawText: string,
     options?: {
@@ -1054,6 +1142,8 @@ class HumanizedAudioEngine {
 
     if (engineToUse === 'gemini_neural') {
       this.speakViaGeminiTTS(rawText, options);
+    } else if (engineToUse === 'kokoro_local') {
+      this.speakViaKokoro(rawText, options);
     } else {
       this.speakViaSpeechSynthesis(rawText, options);
     }

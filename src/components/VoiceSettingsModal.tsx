@@ -87,7 +87,9 @@ export const VoiceSettingsModal: React.FC<VoiceSettingsModalProps> = ({
     setTestStatusMessage(
       engine === 'gemini_neural'
         ? '🎙️ Voix IA Studio (Gemini) en cours...'
-        : '⚡ Synthèse locale 0 ms...'
+        : engine === 'kokoro_local'
+          ? '🇫🇷 Voix Kokoro locale (1er usage : téléchargement du modèle)...'
+          : '⚡ Synthèse locale 0 ms...'
     );
 
     audioEngine.testVoice(sampleType, {
@@ -99,8 +101,14 @@ export const VoiceSettingsModal: React.FC<VoiceSettingsModalProps> = ({
       },
       onError: (err: any) => {
         const msg = err?.message || String(err || '');
+        const isKokoro = engine === 'kokoro_local';
         let human: string;
-        if (msg.includes('429') || msg.includes('Quota') || msg.includes('RESOURCE_EXHAUSTED')) {
+        if (isKokoro) {
+          human = msg.includes('fetch')
+            ? "Le modèle vocal Kokoro n'a pas pu être téléchargé. Vérifiez la connexion : "
+              + 'le premier usage nécessite un téléchargement, à faire de préférence en Wi-Fi.'
+            : `La synthèse Kokoro a échoué (${msg || 'erreur inconnue'}).`;
+        } else if (msg.includes('429') || msg.includes('Quota') || msg.includes('RESOURCE_EXHAUSTED')) {
           human =
             'Quota Gemini atteint pour la voix IA. Le modèle TTS est en préversion : '
             + 'son quota gratuit est très bas et se réinitialise après quelques minutes.';
@@ -112,7 +120,8 @@ export const VoiceSettingsModal: React.FC<VoiceSettingsModalProps> = ({
           human = msg || 'Erreur inconnue';
         }
         // Réponse brute conservée : c'est elle qui permet de trancher.
-        setLastFailureReason(`${human}\n\nRéponse de Google : ${msg.slice(0, 300) || '(vide)'}`);
+        const source = isKokoro ? 'Détail technique' : 'Réponse de Google';
+        setLastFailureReason(`${human}\n\n${source} : ${msg.slice(0, 300) || '(vide)'}`);
         setTestStatusMessage(null);
       },
     });
@@ -404,6 +413,56 @@ export const VoiceSettingsModal: React.FC<VoiceSettingsModalProps> = ({
           )}
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+            {/* Mode 0 : Kokoro local — gratuit, illimité, hors connexion */}
+            <div
+              onClick={() => handleUpdate({ engineMode: 'kokoro_local' })}
+              className={`p-3.5 rounded-2xl border text-left transition-all cursor-pointer flex flex-col justify-between sm:col-span-2 ${
+                settings.engineMode === 'kokoro_local'
+                  ? 'border-emerald-500 bg-emerald-500/10 text-white ring-1 ring-emerald-500 shadow-md'
+                  : 'bg-stone-950 border-stone-800 text-stone-400 hover:border-stone-700'
+              }`}
+            >
+              <div>
+                <div className="flex items-center justify-between font-bold text-xs text-white gap-2">
+                  <span className="flex items-center gap-1.5 text-emerald-400">
+                    <Smartphone className="w-3.5 h-3.5" />
+                    Voix française locale (Kokoro)
+                  </span>
+                  {settings.engineMode === 'kokoro_local' ? (
+                    <span className="text-[10px] bg-emerald-500 text-stone-950 px-1.5 py-0.2 rounded font-black shrink-0">
+                      SÉLECTIONNÉ
+                    </span>
+                  ) : (
+                    <span className="text-[10px] text-stone-500 font-mono shrink-0">
+                      Cliquer pour choisir
+                    </span>
+                  )}
+                </div>
+                <p className="text-[11px] text-stone-300 mt-1 leading-snug">
+                  Tourne sur le téléphone : gratuit, sans quota, fonctionne hors connexion.
+                  Téléchargement du modèle au premier usage, à faire en Wi-Fi.
+                </p>
+                <p className="text-[10px] text-amber-300/80 mt-1.5 leading-snug">
+                  Expérimental : qualité en dessous de Gemini, repli automatique sur la voix du
+                  navigateur en cas d'échec.
+                </p>
+              </div>
+              <div className="flex items-center justify-between mt-2.5 pt-2 border-t border-stone-800">
+                <span className="text-[10px] font-mono text-emerald-400">Gratuit & illimité</span>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleTest('effort', 'kokoro_local');
+                  }}
+                  disabled={isPlayingSample}
+                  className="px-3 py-1.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 disabled:opacity-50 text-stone-950 text-[11px] font-black flex items-center gap-1 cursor-pointer"
+                >
+                  <Play className="w-3 h-3 fill-stone-950" />
+                  Tester Kokoro
+                </button>
+              </div>
+            </div>
+
             {/* Mode 1: Gemini Neural Studio (Default & Recommended) */}
             <div
               onClick={() => handleUpdate({ engineMode: 'gemini_neural' })}

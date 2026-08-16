@@ -198,7 +198,10 @@ export interface RideRecord {
 }
 
 export type CoachPersona = 'jean_marc_dynamique' | 'marc_pose' | 'emilie_punchy' | 'radio_tour';
-export type VoiceEngineMode = 'gemini_neural' | 'browser_speech';
+export type VoiceEngineMode =
+  | 'gemini_neural' // Gemini TTS : voix la plus expressive, soumise à un quota
+  | 'kokoro_local' // Kokoro exécuté dans le navigateur : gratuit, illimité, hors connexion
+  | 'browser_speech'; // Synthèse du système : instantanée, sans téléchargement
 export type RadioAmbienceStyle = 'ds_car' | 'radio_tour_official' | 'walkie_talkie_intense' | 'modern_earpiece' | 'off';
 
 export interface VoiceSettings {

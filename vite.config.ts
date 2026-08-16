@@ -26,9 +26,17 @@ function pwaServiceWorker(): Plugin {
       const swPath = path.join(outDir, 'sw.js');
       if (!fs.existsSync(swPath)) return;
 
-      const assets = Object.keys(bundle)
-        .filter((file) => /\.(js|css|woff2?|png|svg)$/.test(file))
-        .map((file) => `./${file}`);
+      // Seuls les assets du chargement initial sont préchargés. Les chunks
+      // importés dynamiquement (moteur vocal Kokoro, phonémiseur, runtime ONNX)
+      // pèsent plusieurs mégaoctets : les précharger imposerait ce coût à tous,
+      // y compris à ceux qui n'activent jamais ce moteur.
+      const assets = Object.entries(bundle)
+        .filter(([file, chunk]) => {
+          if (/\.css$/.test(file)) return true;
+          if (!/\.js$/.test(file)) return false;
+          return chunk.type === 'chunk' && chunk.isEntry;
+        })
+        .map(([file]) => `./${file}`);
 
       const buildId = Date.now().toString(36);
 
