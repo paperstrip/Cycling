@@ -293,6 +293,24 @@ class HumanizedAudioEngine {
    * État réel de la chaîne audio, affiché dans le panneau Oreillette.
    * Indispensable pour diagnostiquer sur un téléphone, sans console.
    */
+  /** Voix française actuellement retenue, et si elle est de qualité améliorée. */
+  public getActiveVoiceInfo(): { name: string | null; isEnhanced: boolean; total: number } {
+    const voice = this.selectedVoice || this.cachedVoices[0] || null;
+    const name = voice?.name || null;
+    const lower = (name || '').toLowerCase();
+    // iOS nomme ses voix de qualité « Améliorée » ou « Premium » ; les voix
+    // d'origine sont dites « compactes » et sonnent nettement plus robotiques.
+    const isEnhanced =
+      lower.includes('enhanced') ||
+      lower.includes('améliorée') ||
+      lower.includes('amelioree') ||
+      lower.includes('premium') ||
+      lower.includes('natural') ||
+      lower.includes('naturelle') ||
+      lower.includes('siri');
+    return { name, isEnhanced, total: this.cachedVoices.length };
+  }
+
   public getAudioDiagnostics(): {
     contextState: string;
     mediaSession: string;

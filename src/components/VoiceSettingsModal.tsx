@@ -42,6 +42,9 @@ export const VoiceSettingsModal: React.FC<VoiceSettingsModalProps> = ({
   const [lastFailureReason, setLastFailureReason] = useState<string | null>(null);
   // Progression du téléchargement du modèle Kokoro pendant un test.
   const [kokoroProgress, setKokoroProgress] = useState<string | null>(null);
+  const [voiceInfo, setVoiceInfo] = useState<ReturnType<
+    typeof audioEngine.getActiveVoiceInfo
+  > | null>(null);
   const [diagnostics, setDiagnostics] = useState<ReturnType<
     typeof audioEngine.getAudioDiagnostics
   > | null>(null);
@@ -52,6 +55,7 @@ export const VoiceSettingsModal: React.FC<VoiceSettingsModalProps> = ({
       const loadVoices = () => {
         const voices = audioEngine.refreshVoices();
         setAvailableVoices(voices);
+        setVoiceInfo(audioEngine.getActiveVoiceInfo());
       };
       loadVoices();
       if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
@@ -379,6 +383,50 @@ export const VoiceSettingsModal: React.FC<VoiceSettingsModalProps> = ({
               </span>
             )}
           </div>
+
+          {/* Qualité de la voix système : gratuite, mais les voix vraiment
+              correctes doivent être téléchargées dans les réglages d'iOS. */}
+          {voiceInfo && (
+            <div
+              className={`p-3 rounded-xl border ${
+                voiceInfo.isEnhanced
+                  ? 'bg-emerald-500/10 border-emerald-500/40'
+                  : 'bg-amber-500/10 border-amber-500/40'
+              }`}
+            >
+              <div className="flex items-start gap-2.5">
+                <Volume2
+                  className={`w-4 h-4 shrink-0 mt-0.5 ${
+                    voiceInfo.isEnhanced ? 'text-emerald-400' : 'text-amber-400'
+                  }`}
+                />
+                <div className="flex-1 min-w-0">
+                  <div
+                    className={`text-[11px] font-black ${
+                      voiceInfo.isEnhanced ? 'text-emerald-300' : 'text-amber-300'
+                    }`}
+                  >
+                    Voix système utilisée : {voiceInfo.name || 'aucune'}
+                    {voiceInfo.isEnhanced ? ' — qualité améliorée' : ' — qualité compacte'}
+                  </div>
+                  {!voiceInfo.isEnhanced && (
+                    <p className="text-[11px] text-stone-300 mt-1.5 leading-relaxed">
+                      Votre iPhone n'a que les voix d'origine ({voiceInfo.total} disponible
+                      {voiceInfo.total > 1 ? 's' : ''}), les plus robotiques. Des voix françaises
+                      nettement meilleures sont téléchargeables gratuitement :
+                      <br />
+                      <strong className="text-white">
+                        Réglages → Accessibilité → Contenu énoncé → Voix → Français
+                      </strong>
+                      <br />
+                      Choisissez une voix marquée « Améliorée » ou « Premium » (Thomas, Audrey,
+                      Aurélie). L'app la sélectionnera automatiquement.
+                    </p>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* Téléchargement du modèle Kokoro en cours */}
           {kokoroProgress && (
