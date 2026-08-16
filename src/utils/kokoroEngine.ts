@@ -52,6 +52,9 @@ const downloaded: Record<string, { loaded: number; total: number }> = {};
 /** Sans limite, un téléchargement bloqué laisse l'interface figée sans explication. */
 const MODEL_LOAD_TIMEOUT_MS = 5 * 60 * 1000;
 
+/** Une phrase courte doit être synthétisée en quelques secondes. */
+const SYNTHESIS_TIMEOUT_MS = 90 * 1000;
+
 function withTimeout<T>(promise: Promise<T>, ms: number, message: string): Promise<T> {
   return Promise.race([
     promise,
@@ -73,7 +76,23 @@ export async function loadKokoro(onProgress?: (p: KokoroProgress) => void): Prom
   if (loadingPromise) return loadingPromise;
 
   loadingPromise = (async () => {
-    const { KokoroTTS } = await import('kokoro-js');
+    const { KokoroTTS, env } = await import('kokoro-js');
+
+    // Exécution mono-thread obligatoire.
+    // Le runtime ONNX charge par défaut une variante multithread, qui exige
+    // SharedArrayBuffer — lui-même conditionné aux en-têtes COOP/COEP que
+    // GitHub Pages ne permet pas d'envoyer. Sans cela, l'initialisation des
+    // threads reste bloquée indéfiniment APRÈS un téléchargement réussi, sans
+    // jamais lever d'erreur.
+    try {
+      const wasmBackend = (env as any)?.backends?.onnx?.wasm;
+      if (wasmBackend) {
+        wasmBackend.numThreads = 1;
+        wasmBackend.proxy = false;
+      }
+    } catch (err) {
+      console.warn('Configuration mono-thread du runtime ONNX impossible:', err);
+    }
 
     // Quantification 8 bits : ~86 Mo, contre ~326 Mo en fp32. Sur un téléphone
     // en 4G, fp32 est inutilisable — le téléchargement n'aboutit pas et rien
@@ -99,9 +118,11 @@ export async function loadKokoro(onProgress?: (p: KokoroProgress) => void): Prom
           onProgress({
             percent,
             status:
-              total > 0
-                ? `${(loaded / 1048576).toFixed(0)} / ${(total / 1048576).toFixed(0)} Mo`
-                : p?.status || 'préparation',
+              percent >= 100
+                ? 'initialisation du moteur…'
+                : total > 0
+                  ? `${(loaded / 1048576).toFixed(0)} / ${(total / 1048576).toFixed(0)} Mo`
+                  : p?.status || 'préparation',
           });
         },
       } as any),
@@ -109,6 +130,8 @@ export async function loadKokoro(onProgress?: (p: KokoroProgress) => void): Prom
       "Le téléchargement du modèle vocal n'a pas abouti dans le temps imparti. "
         + 'Réessayez en Wi-Fi : le modèle pèse environ 86 Mo.',
     );
+
+    onProgress?.({ percent: 100, status: 'moteur prêt' });
 
     // La voix française n'est pas déclarée dans la table de la librairie, alors
     // que le modèle la fournit. `voices` étant exposé par référence, on peut
@@ -156,8 +179,13 @@ export async function synthesizeFrench(
   if (!clean) throw new Error('Texte vide');
 
   // 1. Phonèmes français, produits hors de kokoro-js.
+  onProgress?.({ percent: 100, status: 'phonémisation…' });
   const { phonemize } = await import('phonemizer');
-  const phonemeChunks: string[] = await phonemize(clean, 'fr');
+  const phonemeChunks: string[] = await withTimeout(
+    phonemize(clean, 'fr'),
+    SYNTHESIS_TIMEOUT_MS,
+    "La phonémisation française n'a pas abouti.",
+  );
   const phonemes = Array.isArray(phonemeChunks) ? phonemeChunks.join(' ') : String(phonemeChunks);
   if (!phonemes.trim()) throw new Error('Phonémisation française vide');
 
@@ -169,7 +197,12 @@ export async function synthesizeFrench(
   });
 
   // 3. Synthèse en sautant la phonémisation interne, anglophone par défaut.
-  const audio = await tts.generate_from_ids(input_ids, { voice: FRENCH_VOICE_ID });
+  onProgress?.({ percent: 100, status: 'synthèse…' });
+  const audio = await withTimeout<any>(
+    tts.generate_from_ids(input_ids, { voice: FRENCH_VOICE_ID }),
+    SYNTHESIS_TIMEOUT_MS,
+    "La synthèse vocale n'a pas abouti (moteur trop lent ou mémoire insuffisante).",
+  );
 
   const samples: Float32Array = audio?.audio ?? audio?.data;
   const sampleRate: number = audio?.sampling_rate ?? 24000;
