@@ -93,6 +93,11 @@ serait lisible dans le JavaScript du site.
 - **`src/utils/geminiClient.ts`** — tous les appels Gemini, exécutés côté navigateur
   (remplace l'ancien serveur Express d'AI Studio, incompatible avec un hébergement statique).
 - **`src/utils/apiKey.ts`** — stockage local de la clé API.
+- **`src/utils/voiceCache.ts`** — cache IndexedDB des clips vocaux et
+  préchargement d'une séance avant le départ : la lecture devient instantanée
+  et une séance déjà préparée ne consomme plus de quota.
+- **`src/utils/rideAnalytics.ts`** — analyse locale de l'effort (écart à la
+  cible, tendance, régularité) et décision de solliciter l'IA.
 - **`src/utils/geoTracker.ts`** — suivi GPS via l'API Geolocation.
 - **`src/utils/audioEngine.ts`** — moteur audio (voix Gemini TTS avec repli automatique
   sur la synthèse vocale du navigateur).

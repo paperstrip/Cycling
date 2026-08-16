@@ -18,6 +18,7 @@ import { VoiceSettingsModal } from './components/VoiceSettingsModal';
 import { OnboardingModal } from './components/OnboardingModal';
 import { ApiKeyModal } from './components/ApiKeyModal';
 import { BottomNav, NAV_ITEMS } from './components/BottomNav';
+import { RidePreparationModal } from './components/RidePreparationModal';
 import { PwaStatusBar, PwaInstallPrompt } from './components/PwaStatusBar';
 import { audioEngine } from './utils/audioEngine';
 import { hasApiKey } from './utils/apiKey';
@@ -58,6 +59,8 @@ export default function App() {
   const [isVoiceModalOpen, setIsVoiceModalOpen] = useState<boolean>(false);
   const [isApiKeyModalOpen, setIsApiKeyModalOpen] = useState<boolean>(false);
   const [isApiKeyConfigured, setIsApiKeyConfigured] = useState<boolean>(hasApiKey());
+  // Séance en attente de préchargement vocal avant le départ.
+  const [planPendingStart, setPlanPendingStart] = useState<WorkoutPlan | null>(null);
 
   // GPS Availability Status
   const [isGpsAvailable, setIsGpsAvailable] = useState<boolean>(true);
@@ -119,8 +122,16 @@ export default function App() {
   };
 
   const handleStartWorkout = (plan: WorkoutPlan) => {
+    // Doit rester dans le geste utilisateur : iOS n'autorise le déverrouillage
+    // audio que là.
     audioEngine.unlockAudio();
     setActivePlan(plan);
+    // Préchargement des consignes avant le départ, pour supprimer la latence.
+    setPlanPendingStart(plan);
+  };
+
+  const handlePreparationReady = () => {
+    setPlanPendingStart(null);
     setIsLiveRideActive(true);
   };
 
@@ -415,6 +426,16 @@ export default function App() {
       <footer className="hidden md:block border-t border-stone-800 bg-stone-950 py-4 text-center text-xs text-stone-500">
         <p>CycloCoach Pro • Coaching Vocal Audio & Itinéraires Réels OpenStreetMap</p>
       </footer>
+
+      {/* Préchargement vocal avant le départ */}
+      {planPendingStart && (
+        <RidePreparationModal
+          isOpen
+          plan={planPendingStart}
+          onReady={handlePreparationReady}
+          onCancel={() => setPlanPendingStart(null)}
+        />
+      )}
 
       {/* Barre de navigation basse (mobile) */}
       <BottomNav activeTab={activeTab} onSelect={setActiveTab} />

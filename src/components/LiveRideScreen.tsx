@@ -11,7 +11,16 @@ import {
 import { flattenWorkoutPlan, formatTimeDisplay, formatTimeHoursDisplay } from '../utils/planFlatten';
 import { GeoTracker, GeoState } from '../utils/geoTracker';
 import { audioEngine } from '../utils/audioEngine';
-import { generateLiveMotivation } from '../utils/geminiClient';
+import { analyzeLiveRide, type LiveAnalysisResult } from '../utils/geminiClient';
+import {
+  BlockTelemetry,
+  shouldRequestCoachInput,
+  TREND_LABEL,
+  VERDICT_LABEL,
+  type BlockAnalysis,
+} from '../utils/rideAnalytics';
+import { getStoredProfile } from '../utils/profileStorage';
+import { AdherenceGauge } from './AdherenceGauge';
 import { WorkoutProfileBar } from './WorkoutProfileBar';
 import { VoiceSettingsModal } from './VoiceSettingsModal';
 import {
@@ -34,6 +43,14 @@ import {
   AlertTriangle,
   Headphones,
 } from 'lucide-react';
+
+/** Consignes d'allure renvoyées par l'analyse IA. */
+const ACTION_LABEL: Record<LiveAnalysisResult['action'], string> = {
+  accelerer: '↑ Accélère',
+  maintenir: '= Maintiens',
+  reduire: '↓ Réduis',
+  recuperer: '~ Récupère',
+};
 
 interface LiveRideScreenProps {
   plan: WorkoutPlan;
@@ -58,6 +75,10 @@ export const LiveRideScreen: React.FC<LiveRideScreenProps> = ({
   const [isMuted, setIsMuted] = useState<boolean>(false);
   const [isVoiceModalOpen, setIsVoiceModalOpen] = useState<boolean>(false);
   const [recentCoachMessage, setRecentCoachMessage] = useState<string | null>(null);
+  // Dernière consigne structurée de l'IA (verdict + point technique).
+  const [coachAction, setCoachAction] = useState<LiveAnalysisResult | null>(null);
+  // Analyse locale, recalculée chaque seconde et affichée en continu.
+  const [liveAnalysis, setLiveAnalysis] = useState<BlockAnalysis | null>(null);
 
   // GPS Telemetry State
   const [geoState, setGeoState] = useState<GeoState>({
@@ -83,6 +104,13 @@ export const LiveRideScreen: React.FC<LiveRideScreenProps> = ({
   const wakeLockRef = useRef<any>(null);
   const lastAiCommentTime = useRef<number>(0);
   const hasAnnouncedCurrentStep = useRef<boolean>(false);
+  const cyclistProfile = useRef(getStoredProfile()).current;
+  const telemetryRef = useRef<BlockTelemetry>(
+    new BlockTelemetry(steps[0]?.targetIntensity || 'moyen', getStoredProfile().level),
+  );
+  // Empêche deux analyses simultanées (une réponse lente chevaucherait la suivante).
+  const isAnalyzing = useRef<boolean>(false);
+  const recentCoachTexts = useRef<string[]>([]);
 
   // Current Step Object
   const currentStep: ExecutionStep = steps[currentStepIndex] || steps[0];
@@ -145,6 +173,8 @@ export const LiveRideScreen: React.FC<LiveRideScreenProps> = ({
           speed: state.currentSpeedKmh,
           dist: state.totalDistanceKm,
         });
+        // Alimente l'analyse du bloc en cours.
+        telemetryRef.current.addSample(state.currentSpeedKmh);
       }
     });
 
@@ -203,11 +233,25 @@ export const LiveRideScreen: React.FC<LiveRideScreenProps> = ({
         return nextVal;
       });
 
-      // Periodic AI Coach Commentary (every 3 to 4 minutes: ~210 seconds)
+      // Analyse IA déclenchée par les événements de la séance plutôt qu'à
+      // intervalle fixe : une dérive d'allure mérite une correction immédiate,
+      // un bloc qui se déroule bien n'a pas besoin d'être commenté.
+      const analysis = telemetryRef.current.analyze();
+      setLiveAnalysis(analysis);
+
       const now = totalElapsedSec;
-      if (now - lastAiCommentTime.current >= 210 && now > 45) {
+      const decision = shouldRequestCoachInput({
+        secondsSinceLastCoach: now - lastAiCommentTime.current,
+        stepElapsedSec,
+        stepRemainingSec,
+        isEffortBlock: currentStep.type === 'effort',
+        analysis,
+        totalElapsedSec: now,
+      });
+
+      if (decision.shouldTrigger && decision.reason) {
         lastAiCommentTime.current = now;
-        triggerPeriodicAiCoach();
+        triggerAiAnalysis(decision.reason);
       }
     }, 1000);
 
@@ -275,6 +319,13 @@ export const LiveRideScreen: React.FC<LiveRideScreenProps> = ({
       currentStepGpsPoints.current = [];
 
       const upcomingStep = steps[nextIndex];
+
+      // Remise à zéro de l'analyse : mélanger les vitesses d'un effort et
+      // d'une récupération produirait une moyenne dénuée de sens.
+      telemetryRef.current.reset(upcomingStep.targetIntensity);
+      setLiveAnalysis(null);
+      setCoachAction(null);
+
       const vocalText = upcomingStep.vocalPrompt;
       audioEngine.speak(vocalText, { priority: 'high', intensity: upcomingStep.targetIntensity });
       logCoachMessage(vocalText, 'plan');
@@ -328,30 +379,58 @@ export const LiveRideScreen: React.FC<LiveRideScreenProps> = ({
     onFinishRide(ride);
   };
 
-  // Periodic AI Coach Commentary Call
-  const triggerPeriodicAiCoach = async () => {
+  /**
+   * Sollicite l'analyse IA de la situation courante.
+   * Le motif du déclenchement est transmis au modèle pour cadrer sa réponse :
+   * corriger une dérive n'appelle pas le même discours qu'un point d'étape.
+   */
+  const triggerAiAnalysis = async (reason: string) => {
+    if (isAnalyzing.current) return;
+    isAnalyzing.current = true;
     try {
-      const comment = await generateLiveMotivation({
+      const analysis = telemetryRef.current.analyze();
+
+      const result = await analyzeLiveRide({
+        reason,
         blockName: currentStep.title,
         blockType: currentStep.type,
         targetIntensity: currentStep.targetIntensity,
-        timeRemainingInBlockSec: stepRemainingSec,
-        totalTimeElapsedSec: totalElapsedSec,
-        currentSpeedKmh: geoState.currentSpeedKmh,
-        averageSpeedKmh: geoState.averageSpeedKmh || geoState.currentSpeedKmh,
-        currentDistanceKm: geoState.totalDistanceKm,
-        workoutGoal: plan.objectif,
         stepNumber: currentStepIndex + 1,
         totalSteps: steps.length,
+        stepElapsedSec,
+        stepRemainingSec,
+        totalElapsedSec,
+        currentSpeedKmh: geoState.currentSpeedKmh,
+        avgSpeedInBlockKmh: analysis.avgSpeedKmh,
+        targetSpeedKmh: analysis.targetSpeedKmh,
+        deviationPercent: analysis.deviationPercent,
+        verdict: VERDICT_LABEL[analysis.verdict],
+        trend: TREND_LABEL[analysis.trend],
+        variability: analysis.variability,
+        totalDistanceKm: geoState.totalDistanceKm,
+        workoutGoal: plan.objectif,
+        cyclistName: cyclistProfile?.name,
+        cyclistLevel: cyclistProfile?.level,
+        recentMessages: recentCoachTexts.current.slice(-3),
       });
 
-      if (comment) {
-        audioEngine.speak(comment, { priority: 'normal', intensity: currentStep.targetIntensity });
-        logCoachMessage(comment, 'gemini_coach');
+      if (result.comment) {
+        setCoachAction(result);
+        recentCoachTexts.current.push(result.comment);
+        if (recentCoachTexts.current.length > 6) recentCoachTexts.current.shift();
+
+        audioEngine.speak(result.comment, {
+          // Une correction urgente coupe la parole en cours.
+          priority: result.urgence >= 3 ? 'high' : 'normal',
+          intensity: currentStep.targetIntensity,
+        });
+        logCoachMessage(result.comment, 'gemini_coach');
       }
     } catch (e) {
-      // Ignore silently without halting local timer
-      console.warn('Periodic coach commentary skipped:', e);
+      // Sans gravité : le chronomètre local n'est jamais interrompu.
+      console.warn('Analyse coach ignorée:', e);
+    } finally {
+      isAnalyzing.current = false;
     }
   };
 
@@ -575,6 +654,49 @@ export const LiveRideScreen: React.FC<LiveRideScreenProps> = ({
             </div>
           </div>
         </div>
+
+        {/* Adhérence à l'intensité demandée, calculée en local et en continu */}
+        {liveAnalysis && (
+          <div className="max-w-2xl mx-auto w-full">
+            <AdherenceGauge analysis={liveAnalysis} sunlightMode={sunlightMode} />
+          </div>
+        )}
+
+        {/* Consigne structurée issue de l'analyse IA */}
+        {coachAction && (
+          <div
+            className={`max-w-2xl mx-auto w-full p-3 rounded-xl border flex items-center gap-3 ${
+              coachAction.action === 'accelerer'
+                ? 'bg-emerald-500/10 border-emerald-500/40'
+                : coachAction.action === 'reduire'
+                  ? 'bg-rose-500/10 border-rose-500/40'
+                  : coachAction.action === 'recuperer'
+                    ? 'bg-cyan-500/10 border-cyan-500/40'
+                    : 'bg-stone-800/60 border-stone-700'
+            }`}
+          >
+            <div className="text-center shrink-0">
+              <div
+                className={`text-[11px] font-black uppercase tracking-wider ${
+                  coachAction.action === 'accelerer'
+                    ? 'text-emerald-400'
+                    : coachAction.action === 'reduire'
+                      ? 'text-rose-400'
+                      : coachAction.action === 'recuperer'
+                        ? 'text-cyan-400'
+                        : 'text-stone-300'
+                }`}
+              >
+                {ACTION_LABEL[coachAction.action]}
+              </div>
+            </div>
+            {coachAction.focus && (
+              <div className="flex-1 min-w-0 text-[11px] text-stone-300 border-l border-stone-700 pl-3">
+                {coachAction.focus}
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Coach Vocal Feedback Bubble */}
         {recentCoachMessage && (

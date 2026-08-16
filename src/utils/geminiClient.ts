@@ -679,6 +679,140 @@ Rédige un message audio de coach cycliste en français : 1 à 2 phrases courtes
 }
 
 /* ------------------------------------------------------------------ */
+/* 6 bis. Analyse semi-temps réel de la sortie                         */
+/* ------------------------------------------------------------------ */
+
+export interface LiveAnalysisInput {
+  /** Motif du déclenchement, pour cadrer la réponse. */
+  reason: string;
+  blockName: string;
+  blockType: string;
+  targetIntensity: string;
+  stepNumber: number;
+  totalSteps: number;
+  stepElapsedSec: number;
+  stepRemainingSec: number;
+  totalElapsedSec: number;
+  currentSpeedKmh: number;
+  avgSpeedInBlockKmh: number;
+  targetSpeedKmh: number;
+  deviationPercent: number;
+  verdict: string;
+  trend: string;
+  variability: number;
+  totalDistanceKm: number;
+  workoutGoal: string;
+  cyclistName?: string;
+  cyclistLevel?: string;
+  /** Derniers messages déjà prononcés, pour ne pas se répéter. */
+  recentMessages: string[];
+}
+
+export interface LiveAnalysisResult {
+  /** Phrase courte prononcée dans l'oreillette. */
+  comment: string;
+  /** Consigne d'allure exploitable par l'interface. */
+  action: 'accelerer' | 'maintenir' | 'reduire' | 'recuperer';
+  /** Point technique bref affiché à l'écran. */
+  focus: string;
+  /** 1 = information, 3 = correction urgente. */
+  urgence: number;
+}
+
+const FALLBACK_ANALYSIS: LiveAnalysisResult = {
+  comment: 'Garde le rythme et fluidifie ton coup de pédale, tu es dans l\'allure !',
+  action: 'maintenir',
+  focus: 'Buste stable, épaules relâchées',
+  urgence: 1,
+};
+
+/**
+ * Analyse la situation courante et renvoie une consigne adaptée.
+ * Contrairement au commentaire périodique, le modèle reçoit ici l'écart réel à
+ * la cible, la tendance et l'historique récent : il peut donc corriger plutôt
+ * que d'encourager dans le vide.
+ */
+export async function analyzeLiveRide(input: LiveAnalysisInput): Promise<LiveAnalysisResult> {
+  try {
+    const reasonBrief: Record<string, string> = {
+      derive_effort:
+        "Le cycliste s'écarte nettement de l'intensité demandée : corrige son allure sans le décourager.",
+      debut_bloc_dur:
+        "Le bloc d'effort vient de commencer : donne un point technique précis pour bien l'installer.",
+      fin_de_bloc:
+        'Le bloc se termine dans quelques secondes : relance-le pour finir proprement.',
+      point_regulier: "Point d'étape régulier : situe l'effort et motive.",
+    };
+
+    const prompt = `Situation actuelle du cycliste :
+- Coureur : ${input.cyclistName || 'Champion'} (niveau ${input.cyclistLevel || 'intermédiaire'})
+- Bloc ${input.stepNumber}/${input.totalSteps} : "${input.blockName}" (type ${input.blockType}, intensité demandée ${input.targetIntensity})
+- Écoulé dans le bloc : ${Math.round(input.stepElapsedSec)}s, restant : ${Math.round(input.stepRemainingSec)}s
+- Temps total : ${Math.floor(input.totalElapsedSec / 60)} min, distance ${input.totalDistanceKm.toFixed(1)} km
+- Vitesse instantanée : ${input.currentSpeedKmh.toFixed(1)} km/h
+- Moyenne sur ce bloc : ${input.avgSpeedInBlockKmh.toFixed(1)} km/h pour une cible de ${input.targetSpeedKmh.toFixed(1)} km/h
+- Écart à la cible : ${input.deviationPercent.toFixed(0)} % (${input.verdict})
+- Tendance : ${input.trend}, régularité (écart-type) : ${input.variability.toFixed(1)}
+- Objectif de la séance : ${input.workoutGoal}
+
+Contexte : ${reasonBrief[input.reason] || reasonBrief.point_regulier}
+
+${
+  input.recentMessages.length > 0
+    ? `Tu as déjà dit récemment :\n${input.recentMessages.map((m) => `- "${m}"`).join('\n')}\nNe répète ni ces phrases ni leur idée.`
+    : ''
+}
+
+Réponds en français, 25 mots maximum pour le commentaire audio.`;
+
+    const response = await getClient().models.generateContent({
+      model: TEXT_MODEL,
+      contents: prompt,
+      config: {
+        systemInstruction:
+          "Tu es Jean-Marc, directeur sportif dans l'oreillette d'un cycliste en plein effort. Tu analyses des données réelles et tu corriges l'allure avec précision : cadence, posture, respiration, gestion de l'effort. Direct, exigeant, jamais bavard. Si l'écart à la cible est important, la correction passe avant l'encouragement.",
+        temperature: 0.8,
+        responseMimeType: 'application/json',
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            comment: {
+              type: Type.STRING,
+              description: 'Phrase prononcée dans l\'oreillette, 25 mots maximum, percutante',
+            },
+            action: {
+              type: Type.STRING,
+              description: "Consigne d'allure : 'accelerer', 'maintenir', 'reduire' ou 'recuperer'",
+            },
+            focus: {
+              type: Type.STRING,
+              description: 'Point technique très bref affiché à l\'écran (moins de 8 mots)',
+            },
+            urgence: {
+              type: Type.INTEGER,
+              description: '1 = information, 2 = ajustement, 3 = correction urgente',
+            },
+          },
+          required: ['comment', 'action', 'focus', 'urgence'],
+        },
+      },
+    });
+
+    const parsed = parseJson<LiveAnalysisResult>(response.text);
+    if (!parsed.comment) return FALLBACK_ANALYSIS;
+    return {
+      comment: parsed.comment.trim().replace(/^["']|["']$/g, ''),
+      action: parsed.action || 'maintenir',
+      focus: parsed.focus || '',
+      urgence: Math.min(3, Math.max(1, parsed.urgence || 1)),
+    };
+  } catch (error) {
+    console.warn('Analyse temps réel indisponible:', error);
+    return FALLBACK_ANALYSIS;
+  }
+}
+
+/* ------------------------------------------------------------------ */
 /* 7. Synthèse vocale neuronale (Gemini TTS)                           */
 /* ------------------------------------------------------------------ */
 

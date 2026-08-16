@@ -12,6 +12,7 @@ import { getStoredVoiceSettings, saveStoredVoiceSettings, DEFAULT_VOICE_SETTINGS
 
 import { hasApiKey } from './apiKey';
 import { synthesizeSpeech } from './geminiClient';
+import { clipKey, getCachedClip, putCachedClip, voiceNameForPersona } from './voiceCache';
 
 /** WAV silencieux de 100 ms, utilisé pour ouvrir la session audio média sur iOS. */
 const SILENT_WAV_DATA_URI =
@@ -128,6 +129,15 @@ class HumanizedAudioEngine {
       window.addEventListener('click', handleTouch, { once: true });
       window.addEventListener('touchstart', handleTouch, { once: true });
     }
+  }
+
+  /** Mémorise un buffer décodé, en bornant le cache mémoire. */
+  private rememberBuffer(key: string, buffer: AudioBuffer) {
+    if (this.audioBufferCache.size > 60) {
+      const firstKey = this.audioBufferCache.keys().next().value;
+      if (firstKey) this.audioBufferCache.delete(firstKey);
+    }
+    this.audioBufferCache.set(key, buffer);
   }
 
   public getAudioContext(): AudioContext | null {
@@ -831,6 +841,17 @@ class HumanizedAudioEngine {
     try {
       let audioBuffer: AudioBuffer | null = this.audioBufferCache.get(cacheKey) || null;
 
+      // 1. Cache persistant (IndexedDB), rempli avant le départ : lecture
+      //    immédiate, sans appel réseau, donc sans décalage avec le chrono.
+      if (!audioBuffer) {
+        const stored = await getCachedClip(clipKey(voiceNameForPersona(persona), textToSpeak));
+        if (stored) {
+          audioBuffer = this.decodePcmToAudioBuffer(stored.audioBase64, stored.sampleRate || 24000);
+          if (audioBuffer) this.rememberBuffer(cacheKey, audioBuffer);
+        }
+      }
+
+      // 2. Sinon, génération à la volée puis mise en cache pour la prochaine fois.
       if (!audioBuffer) {
         const data = await synthesizeSpeech({
           text: textToSpeak,
@@ -840,11 +861,15 @@ class HumanizedAudioEngine {
         if (data.audioBase64) {
           audioBuffer = this.decodePcmToAudioBuffer(data.audioBase64, data.sampleRate || 24000);
           if (audioBuffer) {
-            if (this.audioBufferCache.size > 60) {
-              const firstKey = this.audioBufferCache.keys().next().value;
-              if (firstKey) this.audioBufferCache.delete(firstKey);
-            }
-            this.audioBufferCache.set(cacheKey, audioBuffer);
+            this.rememberBuffer(cacheKey, audioBuffer);
+            putCachedClip({
+              key: clipKey(data.voiceName, textToSpeak),
+              audioBase64: data.audioBase64,
+              sampleRate: data.sampleRate,
+              voiceName: data.voiceName,
+              text: textToSpeak,
+              createdAt: Date.now(),
+            });
           }
         }
       }
