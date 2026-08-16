@@ -20,7 +20,18 @@ import {
   type BlockAnalysis,
 } from '../utils/rideAnalytics';
 import { getStoredProfile } from '../utils/profileStorage';
+import {
+  computePaceCalibration,
+  getStoredCalibration,
+  resolveTargetSpeed,
+  type PaceCalibration,
+} from '../utils/paceCalibration';
 import { AdherenceGauge } from './AdherenceGauge';
+import {
+  clearActiveRide,
+  saveActiveRide,
+  type ActiveRideSession,
+} from '../utils/rideSession';
 import { WorkoutProfileBar } from './WorkoutProfileBar';
 import { VoiceSettingsModal } from './VoiceSettingsModal';
 import {
@@ -56,20 +67,25 @@ interface LiveRideScreenProps {
   plan: WorkoutPlan;
   onFinishRide: (ride: RideRecord) => void;
   onCancelRide: () => void;
+  /** Séance interrompue à reprendre là où elle s'était arrêtée. */
+  resumeFrom?: ActiveRideSession | null;
 }
 
 export const LiveRideScreen: React.FC<LiveRideScreenProps> = ({
   plan,
   onFinishRide,
   onCancelRide,
+  resumeFrom,
 }) => {
   // Flattened step list
   const steps = useRef<ExecutionStep[]>(flattenWorkoutPlan(plan)).current;
 
   // Runtime State
-  const [currentStepIndex, setCurrentStepIndex] = useState<number>(0);
-  const [stepElapsedSec, setStepElapsedSec] = useState<number>(0);
-  const [totalElapsedSec, setTotalElapsedSec] = useState<number>(0);
+  const [currentStepIndex, setCurrentStepIndex] = useState<number>(
+    resumeFrom?.currentStepIndex ?? 0,
+  );
+  const [stepElapsedSec, setStepElapsedSec] = useState<number>(resumeFrom?.stepElapsedSec ?? 0);
+  const [totalElapsedSec, setTotalElapsedSec] = useState<number>(resumeFrom?.totalElapsedSec ?? 0);
   const [isPaused, setIsPaused] = useState<boolean>(false);
   const [sunlightMode, setSunlightMode] = useState<boolean>(false); // High contrast daylight vs OLED dark
   const [isMuted, setIsMuted] = useState<boolean>(false);
@@ -79,6 +95,8 @@ export const LiveRideScreen: React.FC<LiveRideScreenProps> = ({
   const [coachAction, setCoachAction] = useState<LiveAnalysisResult | null>(null);
   // Analyse locale, recalculée chaque seconde et affichée en continu.
   const [liveAnalysis, setLiveAnalysis] = useState<BlockAnalysis | null>(null);
+  // Vitesses cibles issues de l'historique ; null tant que rien n'est mesuré.
+  const [calibration, setCalibration] = useState<PaceCalibration | null>(getStoredCalibration());
 
   // GPS Telemetry State
   const [geoState, setGeoState] = useState<GeoState>({
@@ -94,10 +112,10 @@ export const LiveRideScreen: React.FC<LiveRideScreenProps> = ({
   });
 
   // Step Records (tracking planned vs actual timestamps and speeds)
-  const stepRecords = useRef<StepExecutionRecord[]>([]);
+  const stepRecords = useRef<StepExecutionRecord[]>(resumeFrom?.stepRecords ?? []);
   const currentStepStartTimestamp = useRef<number>(Date.now());
   const currentStepGpsPoints = useRef<{ speed: number; dist: number }[]>([]);
-  const coachVoiceEvents = useRef<CoachVoiceEvent[]>([]);
+  const coachVoiceEvents = useRef<CoachVoiceEvent[]>(resumeFrom?.coachMessages ?? []);
 
   // Trackers and Timers
   const geoTrackerRef = useRef<GeoTracker | null>(null);
@@ -162,6 +180,28 @@ export const LiveRideScreen: React.FC<LiveRideScreenProps> = ({
     };
   }, []);
 
+  // Calibrage des allures : recalculé au démarrage de chaque sortie pour
+  // intégrer les séances précédentes.
+  useEffect(() => {
+    let cancelled = false;
+    const applyCalibration = (calib: PaceCalibration | null) => {
+      telemetryRef.current.setTargetResolver(
+        (zone) => resolveTargetSpeed(zone, cyclistProfile?.level, calib).speedKmh,
+      );
+    };
+
+    applyCalibration(calibration);
+    computePaceCalibration().then((fresh) => {
+      if (cancelled) return;
+      setCalibration(fresh);
+      applyCalibration(fresh);
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   // Initialize GeoTracker and Audio on mount
   useEffect(() => {
     audioEngine.unlockAudio();
@@ -181,8 +221,10 @@ export const LiveRideScreen: React.FC<LiveRideScreenProps> = ({
     geoTrackerRef.current = tracker;
     tracker.start(true); // with simulator fallback if GPS unavailable
 
-    // Announce start of workout and first block
-    const introMsg = `Départ de la sortie ${plan.nom}. ${currentStep.vocalPrompt}`;
+    // Annonce de départ, ou reprise du bloc en cours si la séance redémarre.
+    const introMsg = resumeFrom
+      ? `Reprise de la séance. ${currentStep.vocalPrompt}`
+      : `Départ de la sortie ${plan.nom}. ${currentStep.vocalPrompt}`;
     audioEngine.speak(introMsg, { priority: 'high', intensity: currentStep.targetIntensity });
     logCoachMessage(introMsg, 'plan');
     hasAnnouncedCurrentStep.current = true;
@@ -257,6 +299,23 @@ export const LiveRideScreen: React.FC<LiveRideScreenProps> = ({
 
     return () => clearInterval(interval);
   }, [isPaused, currentStepIndex, totalElapsedSec, currentStep.durationSec]);
+
+  // Sauvegarde continue : une fermeture brutale ne doit pas effacer la sortie.
+  useEffect(() => {
+    if (totalElapsedSec === 0) return;
+    saveActiveRide({
+      plan,
+      currentStepIndex,
+      stepElapsedSec,
+      totalElapsedSec,
+      stepRecords: stepRecords.current,
+      coachMessages: coachVoiceEvents.current,
+      totalDistanceKm: geoState.totalDistanceKm,
+      maxSpeedKmh: geoState.maxSpeedKmh,
+      startedAt: resumeFrom?.startedAt ?? Date.now() - totalElapsedSec * 1000,
+      updatedAt: Date.now(),
+    });
+  }, [totalElapsedSec, currentStepIndex]);
 
   // Log coach messages
   const logCoachMessage = (text: string, source: 'plan' | 'gemini_coach' | 'countdown') => {
@@ -355,6 +414,9 @@ export const LiveRideScreen: React.FC<LiveRideScreenProps> = ({
     }
 
     audioEngine.speak("Bravo ! Sortie d'entraînement terminée avec succès !", { priority: 'high', intensity: 'facile' });
+
+    // Séance menée à son terme : plus rien à reprendre.
+    clearActiveRide();
 
     const finalGeo = geoTrackerRef.current ? geoTrackerRef.current.getState() : geoState;
 
@@ -658,7 +720,14 @@ export const LiveRideScreen: React.FC<LiveRideScreenProps> = ({
         {/* Adhérence à l'intensité demandée, calculée en local et en continu */}
         {liveAnalysis && (
           <div className="max-w-2xl mx-auto w-full">
-            <AdherenceGauge analysis={liveAnalysis} sunlightMode={sunlightMode} />
+            <AdherenceGauge
+              analysis={liveAnalysis}
+              sunlightMode={sunlightMode}
+              isCalibrated={
+                resolveTargetSpeed(currentStep.targetIntensity, cyclistProfile?.level, calibration)
+                  .isCalibrated
+              }
+            />
           </div>
         )}
 

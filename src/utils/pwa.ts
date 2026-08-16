@@ -95,10 +95,14 @@ export function registerServiceWorker(onUpdateReady: () => void): void {
         console.log('Enregistrement du service worker ignoré :', err);
       });
 
-    // Rechargement unique lorsque le nouveau worker prend la main.
+    // Rechargement unique lorsqu'un NOUVEAU worker remplace l'ancien.
+    // À la toute première visite il n'y a pas encore de contrôleur : le worker
+    // qui s'installe déclenche aussi controllerchange, et recharger là
+    // infligerait un rechargement inutile à chaque nouvel arrivant.
+    const hadControllerAtStartup = !!navigator.serviceWorker.controller;
     let hasReloaded = false;
     navigator.serviceWorker.addEventListener('controllerchange', () => {
-      if (hasReloaded) return;
+      if (!hadControllerAtStartup || hasReloaded) return;
       hasReloaded = true;
       window.location.reload();
     });

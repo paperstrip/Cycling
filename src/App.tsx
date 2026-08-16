@@ -19,6 +19,12 @@ import { OnboardingModal } from './components/OnboardingModal';
 import { ApiKeyModal } from './components/ApiKeyModal';
 import { BottomNav, NAV_ITEMS } from './components/BottomNav';
 import { RidePreparationModal } from './components/RidePreparationModal';
+import {
+  clearActiveRide,
+  formatInterruptionDelay,
+  getResumableRide,
+  type ActiveRideSession,
+} from './utils/rideSession';
 import { PwaStatusBar, PwaInstallPrompt } from './components/PwaStatusBar';
 import { audioEngine } from './utils/audioEngine';
 import { hasApiKey } from './utils/apiKey';
@@ -37,6 +43,7 @@ import {
   Headphones,
   ShieldAlert,
   KeyRound,
+  RotateCcw,
 } from 'lucide-react';
 
 export type MainNavTab = 'workouts' | 'routes' | 'program' | 'coach' | 'profile' | 'history';
@@ -61,6 +68,10 @@ export default function App() {
   const [isApiKeyConfigured, setIsApiKeyConfigured] = useState<boolean>(hasApiKey());
   // Séance en attente de préchargement vocal avant le départ.
   const [planPendingStart, setPlanPendingStart] = useState<WorkoutPlan | null>(null);
+  // Séance interrompue détectée au démarrage (app fermée en pleine sortie).
+  const [resumableRide, setResumableRide] = useState<ActiveRideSession | null>(getResumableRide());
+  // Séance effectivement reprise, transmise à l'écran de course.
+  const [resumingRide, setResumingRide] = useState<ActiveRideSession | null>(null);
 
   // GPS Availability Status
   const [isGpsAvailable, setIsGpsAvailable] = useState<boolean>(true);
@@ -135,6 +146,21 @@ export default function App() {
     setIsLiveRideActive(true);
   };
 
+  const handleResumeRide = () => {
+    if (!resumableRide) return;
+    audioEngine.unlockAudio();
+    setActivePlan(resumableRide.plan);
+    setResumingRide(resumableRide);
+    setResumableRide(null);
+    // Reprise immédiate : l'audio de cette séance est déjà en cache.
+    setIsLiveRideActive(true);
+  };
+
+  const handleDiscardResumable = () => {
+    clearActiveRide();
+    setResumableRide(null);
+  };
+
   const handleSelectRouteForRide = (route: CyclingRoute, workoutPlan?: WorkoutPlan) => {
     const planToUse = workoutPlan || activePlan;
     const enrichedPlan: WorkoutPlan = {
@@ -147,10 +173,14 @@ export default function App() {
   const handleFinishRide = (ride: RideRecord) => {
     setLastCompletedRide(ride);
     setIsLiveRideActive(false);
+    setResumingRide(null);
   };
 
   const handleCancelRide = () => {
     setIsLiveRideActive(false);
+    setResumingRide(null);
+    // Abandon volontaire : on n'en proposera pas la reprise.
+    clearActiveRide();
   };
 
   // If in live ride, show full screen rider interface
@@ -160,6 +190,7 @@ export default function App() {
         plan={activePlan}
         onFinishRide={handleFinishRide}
         onCancelRide={handleCancelRide}
+        resumeFrom={resumingRide}
       />
     );
   }
@@ -297,6 +328,38 @@ export default function App() {
 
       {/* Main Body Content Container */}
       <main className="max-w-7xl mx-auto px-4 sm:px-6 py-5 sm:py-8 w-full flex-1 px-safe pb-nav">
+        {/* Séance interrompue : proposition de reprise */}
+        {resumableRide && (
+          <div className="mb-5 p-4 rounded-2xl bg-cyan-500/10 border border-cyan-500/30 space-y-3 animate-fade-up">
+            <div className="flex items-start gap-2.5">
+              <RotateCcw className="w-4 h-4 shrink-0 text-cyan-400 mt-0.5" />
+              <div className="flex-1 min-w-0">
+                <div className="text-xs font-black text-cyan-300">Séance interrompue</div>
+                <p className="text-[11px] text-stone-300 mt-1 leading-relaxed">
+                  «&nbsp;{resumableRide.plan.nom}&nbsp;» s'est arrêtée{' '}
+                  {formatInterruptionDelay(resumableRide)} au bloc{' '}
+                  {resumableRide.currentStepIndex + 1}, après{' '}
+                  {Math.floor(resumableRide.totalElapsedSec / 60)} min d'effort.
+                </p>
+              </div>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <button
+                onClick={handleResumeRide}
+                className="px-4 py-2 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-stone-950 font-black text-[11px] uppercase tracking-wider cursor-pointer transition-colors"
+              >
+                Reprendre
+              </button>
+              <button
+                onClick={handleDiscardResumable}
+                className="px-4 py-2 rounded-xl bg-stone-800 hover:bg-stone-700 text-stone-300 font-bold text-[11px] cursor-pointer transition-colors"
+              >
+                Abandonner
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* API Key Notice: IA features disabled until a Gemini key is provided */}
         {!isApiKeyConfigured && (
           <div className="mb-5 p-3 rounded-2xl bg-amber-500/10 border border-amber-500/30 flex flex-wrap items-center gap-2.5 text-amber-300 text-xs">

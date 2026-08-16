@@ -11,6 +11,8 @@ import { VERDICT_LABEL } from '../utils/rideAnalytics';
 interface AdherenceGaugeProps {
   analysis: BlockAnalysis;
   sunlightMode?: boolean;
+  /** La cible vient-elle de l'historique réel ou d'une estimation générique ? */
+  isCalibrated?: boolean;
 }
 
 /**
@@ -20,7 +22,11 @@ interface AdherenceGaugeProps {
  * une zone verte de tolérance : d'un coup d'œil, le cycliste sait s'il est dans
  * l'allure sans avoir à interpréter des chiffres pendant l'effort.
  */
-export const AdherenceGauge: React.FC<AdherenceGaugeProps> = ({ analysis, sunlightMode }) => {
+export const AdherenceGauge: React.FC<AdherenceGaugeProps> = ({
+  analysis,
+  sunlightMode,
+  isCalibrated,
+}) => {
   const { deviationPercent, verdict, trend, targetSpeedKmh, avgSpeedKmh, sampleCount } = analysis;
 
   // Position du curseur, bornée aux extrémités de l'échelle.
@@ -94,6 +100,14 @@ export const AdherenceGauge: React.FC<AdherenceGaugeProps> = ({ analysis, sunlig
           {avgSpeedKmh.toFixed(1)} / {targetSpeedKmh.toFixed(0)} km/h
         </span>
         <span className={`font-bold ${verdictColor}`}>{VERDICT_LABEL[verdict]}</span>
+      </div>
+
+      {/* Origine de la cible : une estimation générique peut signaler un écart
+          qui n'en est pas un, le cycliste doit pouvoir en tenir compte. */}
+      <div className={`text-[9.5px] ${labelColor}`}>
+        {isCalibrated
+          ? 'Cible calibrée sur vos sorties précédentes'
+          : 'Cible estimée — se calibrera sur vos prochaines sorties'}
       </div>
     </div>
   );

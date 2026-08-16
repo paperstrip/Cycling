@@ -63,10 +63,31 @@ export class BlockTelemetry {
   private samples: number[] = [];
   private zone: IntensityZone;
   private level: string | undefined;
+  /**
+   * Vitesse de référence fournie de l'extérieur (calibrée sur l'historique).
+   * Sans elle, on retombe sur la valeur générique liée au niveau.
+   */
+  private resolveTarget?: (zone: IntensityZone) => number;
 
-  constructor(zone: IntensityZone, level?: string) {
+  constructor(
+    zone: IntensityZone,
+    level?: string,
+    resolveTarget?: (zone: IntensityZone) => number,
+  ) {
     this.zone = zone;
     this.level = level;
+    this.resolveTarget = resolveTarget;
+  }
+
+  /** Met à jour la source des vitesses cibles (calibrage chargé après coup). */
+  setTargetResolver(resolveTarget: (zone: IntensityZone) => number) {
+    this.resolveTarget = resolveTarget;
+  }
+
+  private currentTarget(): number {
+    return this.resolveTarget
+      ? this.resolveTarget(this.zone)
+      : targetSpeedForZone(this.zone, this.level);
   }
 
   reset(zone: IntensityZone) {
@@ -82,7 +103,7 @@ export class BlockTelemetry {
   }
 
   analyze(): BlockAnalysis {
-    const target = targetSpeedForZone(this.zone, this.level);
+    const target = this.currentTarget();
     const n = this.samples.length;
 
     if (n === 0) {
