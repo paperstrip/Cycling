@@ -17,6 +17,7 @@ import {
   Flame,
   Award,
   BookOpen,
+  AlertTriangle,
 } from 'lucide-react';
 
 interface VirtualCoachChatProps {
@@ -105,15 +106,35 @@ export const VirtualCoachChat: React.FC<VirtualCoachChatProps> = ({
       };
 
       setMessages((prev) => [...prev, coachMsg]);
-    } catch (e) {
+    } catch (e: any) {
       console.error(e);
+
+      // Une phrase générique présentée comme une réponse du coach masquait
+      // l'échec réel : l'utilisateur croyait être ignoré. On affiche la cause.
+      const raw = e?.message || String(e || '');
+      let explanation: string;
+      if (raw.includes('clé API') || raw.includes('API key') || raw.includes('API_KEY')) {
+        explanation =
+          "Aucune clé IA n'est configurée. Ajoutez-la via l'icône 🔑 en haut de l'écran pour que le coach puisse répondre.";
+      } else if (raw.includes('429') || raw.includes('RESOURCE_EXHAUSTED') || raw.includes('quota')) {
+        explanation =
+          'Quota IA atteint. Réessayez dans quelques minutes : le coach répondra à nouveau.';
+      } else if (raw.includes('403') || raw.includes('401') || raw.includes('PERMISSION')) {
+        explanation = 'La clé IA a été refusée. Vérifiez-la via l\'icône 🔑 en haut de l\'écran.';
+      } else if (raw.includes('fetch') || raw.includes('network')) {
+        explanation = 'Pas de connexion : le coach a besoin du réseau pour répondre.';
+      } else {
+        explanation = `Le coach n'a pas pu répondre. ${raw.slice(0, 160)}`;
+      }
+
       setMessages((prev) => [
         ...prev,
         {
           id: 'err-' + Date.now(),
           sender: 'coach',
-          text: "Je suis là ! Donnez-moi vos créneaux et vos sensations pour adapter les prochaines séances.",
+          text: explanation,
           timestamp: Date.now(),
+          isError: true,
         },
       ]);
     } finally {
@@ -168,60 +189,33 @@ export const VirtualCoachChat: React.FC<VirtualCoachChatProps> = ({
     // Hauteur calée sur la fenêtre (dvh tient compte des barres mobiles) : la
     // conversation défile dans son propre cadre, sans double défilement.
     <div className="flex flex-col h-[calc(100dvh-13rem)] min-h-[26rem] md:h-[700px] md:max-h-[85vh] rounded-2xl bg-stone-900 border border-stone-800 shadow-2xl overflow-hidden">
-      {/* Header Coach Identity */}
-      <div className="p-4 sm:p-5 bg-gradient-to-r from-stone-900 via-stone-900 to-amber-950/40 border-b border-stone-800 flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <div className="relative">
-            <div className="w-12 h-12 rounded-2xl bg-amber-500 text-stone-950 flex items-center justify-center font-black shadow-lg shadow-amber-500/20">
-              <Sparkles className="w-6 h-6 fill-stone-950" />
-            </div>
-            <span className="absolute -bottom-1 -right-1 w-4 h-4 rounded-full bg-emerald-500 border-2 border-stone-900" />
+      {/* En-tête compact : le contexte du cycliste tient sur une ligne, la
+          conversation occupe le reste de l'écran. L'empilement précédent
+          consommait un tiers de la hauteur avant le premier message. */}
+      <div className="px-4 py-3 bg-stone-900 border-b border-stone-800 flex items-center gap-3">
+        <div className="relative shrink-0">
+          <div className="w-9 h-9 rounded-xl bg-amber-500 text-stone-950 flex items-center justify-center">
+            <Sparkles className="w-4.5 h-4.5 fill-stone-950" />
           </div>
+          <span className="absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full bg-emerald-500 border-2 border-stone-900" />
+        </div>
 
-          <div>
-            <div className="flex items-center gap-2">
-              <h2 className="text-base font-black text-white">Coach Jean-Marc</h2>
-              <span className="px-2 py-0.5 rounded-full bg-amber-500/20 border border-amber-500/30 text-amber-400 text-[10px] font-bold uppercase tracking-wider">
-                Expert Pro FFC
-              </span>
-            </div>
-            <p className="text-xs text-stone-400">
-              Entraînement scientifique, objectifs partagés & parcours optimisés
-            </p>
-          </div>
+        <div className="flex-1 min-w-0">
+          <h2 className="text-sm font-black text-white leading-tight">Coach Jean-Marc</h2>
+          <p className="text-[10.5px] text-stone-400 truncate">
+            {cyclistProfile.ftpWatts ? `${cyclistProfile.ftpWatts} W` : 'FTP à définir'} ·{' '}
+            {cyclistProfile.weeklyHoursAvailable || 6} h/sem
+            {currentProgram ? ` · ${currentProgram.title}` : ''}
+          </p>
         </div>
 
         <button
           onClick={onOpenProfileSettings}
-          className="px-3 py-1.5 rounded-xl bg-stone-800 hover:bg-stone-700 text-stone-300 text-xs font-semibold border border-stone-700 transition-colors cursor-pointer flex items-center gap-1.5"
+          aria-label="Mon profil et mes objectifs"
+          className="p-2 rounded-xl bg-stone-800 hover:bg-stone-700 text-amber-400 border border-stone-700 transition-colors cursor-pointer shrink-0"
         >
-          <Target className="w-3.5 h-3.5 text-amber-400" />
-          <span className="hidden sm:inline">Mon Profil & Objectifs</span>
+          <Target className="w-4 h-4" />
         </button>
-      </div>
-
-      {/* Profile quick bar */}
-      <div className="px-4 py-2 bg-stone-950/80 border-b border-stone-800/80 text-xs text-stone-400 flex flex-wrap items-center justify-between gap-2">
-        <div className="flex items-center gap-3">
-          <span className="text-stone-300 font-semibold">{cyclistProfile.name}</span>
-          <span className="text-stone-600">|</span>
-          <span className="capitalize text-amber-400 font-medium">Niveau {cyclistProfile.level.replace('_', ' ')}</span>
-          {cyclistProfile.ftpWatts && (
-            <>
-              <span className="text-stone-600">|</span>
-              <span>FTP : <strong className="text-white font-mono">{cyclistProfile.ftpWatts} W</strong></span>
-            </>
-          )}
-          <span className="text-stone-600">|</span>
-          <span>Dispo : <strong className="text-white font-mono">{cyclistProfile.weeklyHoursAvailable || 6}h/sem</strong></span>
-        </div>
-
-        {currentProgram && (
-          <div className="flex items-center gap-1.5 text-emerald-400 font-medium text-[11px]">
-            <Award className="w-3.5 h-3.5" />
-            <span>Programme actif : {currentProgram.title}</span>
-          </div>
-        )}
       </div>
 
       {/* Messages List */}
@@ -234,18 +228,31 @@ export const VirtualCoachChat: React.FC<VirtualCoachChatProps> = ({
               className={`flex items-start gap-3 ${isCoach ? 'justify-start' : 'justify-end'}`}
             >
               {isCoach && (
-                <div className="w-8 h-8 rounded-xl bg-amber-500/20 border border-amber-500/30 text-amber-400 flex items-center justify-center shrink-0 mt-0.5">
-                  <Bot className="w-4 h-4" />
+                <div
+                  className={`w-8 h-8 rounded-xl border flex items-center justify-center shrink-0 mt-0.5 ${
+                    msg.isError
+                      ? 'bg-rose-500/20 border-rose-500/40 text-rose-400'
+                      : 'bg-amber-500/20 border-amber-500/30 text-amber-400'
+                  }`}
+                >
+                  {msg.isError ? <AlertTriangle className="w-4 h-4" /> : <Bot className="w-4 h-4" />}
                 </div>
               )}
 
               <div
                 className={`max-w-[85%] sm:max-w-[75%] rounded-2xl p-4 text-xs leading-relaxed space-y-3 ${
-                  isCoach
-                    ? 'bg-stone-850 border border-stone-750 text-stone-100'
-                    : 'bg-amber-500 text-stone-950 font-medium'
+                  msg.isError
+                    ? 'bg-rose-500/10 border border-rose-500/40 text-rose-200'
+                    : isCoach
+                      ? 'bg-stone-850 border border-stone-750 text-stone-100'
+                      : 'bg-amber-500 text-stone-950 font-medium'
                 }`}
               >
+                {msg.isError && (
+                  <div className="text-[10px] font-black uppercase tracking-wider text-rose-400">
+                    Le coach n'a pas pu répondre
+                  </div>
+                )}
                 <div className="whitespace-pre-line font-normal">
                   {msg.text}
                 </div>

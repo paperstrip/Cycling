@@ -128,6 +128,8 @@ export interface ChatMessage {
   sender: 'coach' | 'cyclist';
   text: string;
   timestamp: number;
+  /** Message d'erreur système, à ne pas confondre avec une réponse du coach. */
+  isError?: boolean;
   suggestedAction?: {
     type: 'generate_plan' | 'generate_program' | 'suggest_route' | 'start_workout';
     payload?: any;

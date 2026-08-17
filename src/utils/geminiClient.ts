@@ -285,9 +285,11 @@ Ton approche combine rigueur scientifique de l'entraînement moderne (puissance,
 Tu t'adresses aussi bien à un débutant qui veut préparer sa première cyclo de 50km qu'à un coureur FFC/Granfondo cherchant à franchir un palier.
 
 Dans tes échanges :
-- Pose des questions pertinentes si des éléments manquent (disponibilités hebdomadaires, ressenti de fatigue, échéance d'objectif, matériel capteur/cardio).
+- RÉPONDS D'ABORD À CE QUI EST DEMANDÉ. Si le cycliste décrit sa situation (poids, gabarit, objectif, niveau de ses partenaires, allure visée), analyse-la concrètement avant toute autre chose : ce qu'elle implique physiologiquement, ce qui est réaliste, et par quoi commencer. Ne réponds jamais par une formule d'attente générique.
+- Exploite chaque information donnée. Un poids, une vitesse cible, un contexte de sortie sont des données d'entraînement : sers-t'en pour chiffrer (watts/kg nécessaires, écart à combler, durée de progression réaliste).
+- Ne repose pas une question dont la réponse figure déjà dans la conversation ou dans le profil.
+- Dès que tu disposes d'assez d'éléments, propose une action concrète via suggestedAction : une séance ciblée ou un programme complet, avec un payloadPrompt détaillé reprenant les spécificités évoquées (gabarit, objectif chiffré, contraintes horaires).
 - Félicite chaleureusement les réussites et donne des encouragements puissants et professionnels.
-- Lorsque l'utilisateur a clarifié son besoin ou souhaite un programme complet, propose-lui explicitement d'éditer ou de générer son programme d'entraînement personnalisé ou une séance clé.
 - Reste toujours dans ton rôle d'entraîneur de vélo passionné, constructif et motivant. Réponds en français clair, précis et dynamique.`;
 
   const conversationHistory = messages
@@ -302,7 +304,10 @@ Dans tes échanges :
     ? `Programme en cours : "${currentProgram.title}" (${currentProgram.durationWeeks} semaines).`
     : 'Aucun programme actif pour le moment.';
 
-  const prompt = `Contexte :\n${profileContext}\n${programContext}\n\nHistorique de la discussion :\n${conversationHistory}\n\nDonne la prochaine réponse du Coach Jean-Marc. Sois chaleureux, motivant et d'une expertise irréprochable. Si la discussion converge vers la création d'un programme complet ou d'une séance spécifique, indique une suggestion d'action concrète.`;
+  const lastCyclistMessage =
+    [...messages].reverse().find((m: any) => m.sender === 'cyclist')?.text || '';
+
+  const prompt = `Contexte :\n${profileContext}\n${programContext}\n\nHistorique de la discussion :\n${conversationHistory}\n\nDernier message du cycliste, auquel tu dois répondre précisément :\n"${lastCyclistMessage}"\n\nDonne la prochaine réponse du Coach Jean-Marc. Traite d'abord le contenu de ce dernier message avec des éléments chiffrés et concrets, puis, si tu as assez d'éléments, propose une action (séance ciblée ou programme) dont le payloadPrompt reprend les spécificités évoquées.`;
 
   const response = await getClient().models.generateContent({
     model: TEXT_MODEL,
@@ -331,7 +336,8 @@ Dans tes échanges :
               },
               payloadPrompt: {
                 type: Type.STRING,
-                description: "Prompt affiné prêt à l'emploi pour lancer la génération",
+                description:
+                  "Prompt détaillé prêt à l'emploi pour lancer la génération, reprenant explicitement les spécificités du cycliste évoquées dans la conversation (gabarit, poids, objectif chiffré, allure visée, contraintes horaires)",
               },
             },
           },
