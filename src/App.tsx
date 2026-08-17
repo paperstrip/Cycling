@@ -327,7 +327,7 @@ export default function App() {
       </div>
 
       {/* Main Body Content Container */}
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 py-5 sm:py-8 w-full flex-1 px-safe pb-nav">
+      <main className="max-w-7xl mx-auto px-page py-5 sm:py-8 w-full flex-1 pb-nav">
         {/* Séance interrompue : proposition de reprise */}
         {resumableRide && (
           <div className="mb-5 p-4 rounded-2xl bg-cyan-500/10 border border-cyan-500/30 space-y-3 animate-fade-up">

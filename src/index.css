@@ -54,9 +54,30 @@ button,
 .pb-safe {
   padding-bottom: var(--safe-bottom);
 }
+/* Variantes additives : gardent une marge visible même sans encoche. */
+.pt-safe-3 {
+  padding-top: max(0.75rem, var(--safe-top));
+}
+.pb-safe-3 {
+  padding-bottom: max(0.75rem, var(--safe-bottom));
+}
 .px-safe {
   padding-left: var(--safe-left);
   padding-right: var(--safe-right);
+}
+
+/* Gouttière de page : la marge de lecture ET l'encoche en paysage. `px-4`
+   suivi de `px-safe` s'annulait — même spécificité, `px-safe` déclaré après —
+   et le contenu venait coller au bord de l'écran. */
+.px-page {
+  padding-left: max(1rem, var(--safe-left));
+  padding-right: max(1rem, var(--safe-right));
+}
+@media (min-width: 640px) {
+  .px-page {
+    padding-left: max(1.5rem, var(--safe-left));
+    padding-right: max(1.5rem, var(--safe-right));
+  }
 }
 
 /* Réserve la place de la barre de navigation basse (mobile uniquement). */

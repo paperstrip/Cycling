@@ -110,7 +110,7 @@ export const PwaInstallPrompt: React.FC = () => {
   const platform = getInstallPlatform();
 
   return (
-    <div className="fixed left-0 right-0 bottom-0 z-[70] p-3 px-safe pb-safe animate-fade-up md:p-4">
+    <div className="fixed left-0 right-0 bottom-0 z-[70] pt-3 px-page pb-safe-3 animate-fade-up md:pt-4">
       <div className="mx-auto max-w-md rounded-2xl bg-stone-900 border border-amber-500/40 shadow-2xl p-4 flex gap-3">
         <img
           src={`${import.meta.env.BASE_URL}icon-192.png`}

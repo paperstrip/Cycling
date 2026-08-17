@@ -553,7 +553,7 @@ export const LiveRideScreen: React.FC<LiveRideScreenProps> = ({
 
   return (
     <div
-      className={`min-h-screen ${themeContainer} flex flex-col justify-between p-3 sm:p-5 pt-safe pb-safe px-safe select-none transition-colors duration-200`}
+      className={`min-h-screen ${themeContainer} flex flex-col justify-between px-page pt-safe-3 pb-safe-3 select-none transition-colors duration-200`}
     >
       {/* Top Header Bar */}
       <header className="flex items-center justify-between gap-2 border-b border-stone-800/40 pb-3">
