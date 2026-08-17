@@ -6,6 +6,8 @@ import { getAllRideRecords } from '../utils/storage';
 import { WorkoutProfileBar } from './WorkoutProfileBar';
 import { WorkoutHeroCard } from './WorkoutHeroCard';
 import { WorkoutArtwork, artworkForWorkout } from './WorkoutArtwork';
+import { WorkoutCarouselCard } from './WorkoutCarouselCard';
+import { ScreenTitle } from './ScreenTitle';
 import { ProgressRing } from './ProgressRing';
 import { WeekStrip } from './WeekStrip';
 import { SectionHeader } from './SectionHeader';
@@ -98,10 +100,18 @@ export const WorkoutSelector: React.FC<WorkoutSelectorProps> = ({
   const flattenedSteps = flattenWorkoutPlan(selectedPlan);
   const totalDurationSec = flattenedSteps.reduce((acc, step) => acc + step.durationSec, 0);
 
+  const firstName = (cyclistProfile.name || 'Cycliste').split(' ')[0];
+  const hour = new Date().getHours();
+  const greeting = hour < 12 ? 'Bonjour' : hour < 18 ? 'Bon après-midi' : 'Bonsoir';
+
   return (
     <div className="space-y-7 animate-fadeIn">
-      {/* La salutation est portée par l'en-tête ; ici on situe juste la semaine. */}
-      <section>
+      <section className="space-y-4">
+        <ScreenTitle
+          eyebrow={`${greeting}, ${firstName}`}
+          title="Prêt à"
+          accent="rouler ?"
+        />
         <WeekStrip rideDates={rides.map((r) => r.date)} />
       </section>
 
@@ -272,7 +282,7 @@ export const WorkoutSelector: React.FC<WorkoutSelectorProps> = ({
       <section ref={catalogueRef}>
         <SectionHeader title="Autres séances" />
 
-        <div className="flex items-center gap-2 overflow-x-auto no-scrollbar pb-3">
+        <div className="flex items-center gap-2 overflow-x-auto no-scrollbar bleed-page pb-3">
           {[
             { id: 'all', label: 'Toutes' },
             { id: 'vo2max', label: 'VO2 Max' },
@@ -294,55 +304,19 @@ export const WorkoutSelector: React.FC<WorkoutSelectorProps> = ({
           ))}
         </div>
 
-        <div className="space-y-2">
+        {/* Carrousel : la carte suivante dépasse volontairement du bord, ce qui
+            signale qu'il y en a d'autres sans ajouter de flèche ni de point. */}
+        <div className="flex gap-3 overflow-x-auto no-scrollbar snap-x snap-mandatory bleed-page pb-1">
           {filteredPresets.map((preset) => {
-            const isSelected = selectedPlan.nom === preset.nom;
             const steps = flattenWorkoutPlan(preset);
-            const durMin = Math.round(steps.reduce((a, s) => a + s.durationSec, 0) / 60);
-
             return (
-              <button
+              <WorkoutCarouselCard
                 key={preset.id || preset.nom}
-                onClick={() => onSelectPlan(preset)}
-                className={`w-full p-3.5 rounded-2xl border text-left flex items-center gap-3.5 cursor-pointer transition-colors ${
-                  isSelected
-                    ? 'bg-amber-500/10 border-amber-500'
-                    : 'bg-stone-900 border-stone-800 hover:border-stone-700'
-                }`}
-              >
-                {/* Vignette illustrée, la durée posée dessus : on reconnaît le
-                    type de séance avant même d'avoir lu son nom. */}
-                <div className="relative w-16 h-16 shrink-0 rounded-2xl overflow-hidden bg-stone-950">
-                  <WorkoutArtwork
-                    variant={artworkForWorkout(preset)}
-                    className="absolute inset-0 w-full h-full"
-                  />
-                  <div className="absolute inset-0 bg-stone-950/55" />
-                  <div
-                    className={`absolute inset-0 flex flex-col items-center justify-center ${
-                      isSelected ? 'text-amber-400' : 'text-white'
-                    }`}
-                  >
-                    <span className="font-mono text-base font-bold leading-none">{durMin}</span>
-                    <span className="text-[9px] uppercase tracking-wider opacity-70 mt-0.5">
-                      min
-                    </span>
-                  </div>
-                </div>
-
-                <div className="flex-1 min-w-0">
-                  <div className="text-[13px] font-bold text-white truncate">{preset.nom}</div>
-                  <div className="text-[11.5px] text-stone-400 truncate mt-0.5">
-                    {preset.objectif}
-                  </div>
-                </div>
-
-                {isSelected ? (
-                  <Check className="w-5 h-5 text-amber-400 shrink-0" />
-                ) : (
-                  <ChevronRight className="w-4 h-4 text-stone-600 shrink-0" />
-                )}
-              </button>
+                plan={preset}
+                durationMin={Math.round(steps.reduce((a, s) => a + s.durationSec, 0) / 60)}
+                isSelected={selectedPlan.nom === preset.nom}
+                onSelect={() => onSelectPlan(preset)}
+              />
             );
           })}
         </div>

@@ -98,6 +98,31 @@ button,
   }
 }
 
+/* Défilement horizontal qui va jusqu'aux bords de l'écran tout en gardant les
+   cartes alignées sur la gouttière de page. Annule exactement `px-page`, quelle
+   que soit l'encoche — une marge négative fixe déborderait en paysage. */
+.bleed-page {
+  margin-left: calc(-1 * max(1rem, var(--safe-left)));
+  margin-right: calc(-1 * max(1rem, var(--safe-right)));
+  padding-left: max(1rem, var(--safe-left));
+  padding-right: max(1rem, var(--safe-right));
+  /* Sans cela, `scroll-snap-align: start` cale la première carte sur le bord du
+     conteneur et fait défiler la marge intérieure hors champ : la carte se
+     retrouve collée au bord de l'écran au lieu d'être alignée sur le titre. */
+  scroll-padding-left: max(1rem, var(--safe-left));
+  scroll-padding-right: max(1rem, var(--safe-right));
+}
+@media (min-width: 640px) {
+  .bleed-page {
+    margin-left: calc(-1 * max(1.5rem, var(--safe-left)));
+    margin-right: calc(-1 * max(1.5rem, var(--safe-right)));
+    padding-left: max(1.5rem, var(--safe-left));
+    padding-right: max(1.5rem, var(--safe-right));
+    scroll-padding-left: max(1.5rem, var(--safe-left));
+    scroll-padding-right: max(1.5rem, var(--safe-right));
+  }
+}
+
 /* Réserve la place de la barre de navigation basse (mobile uniquement). */
 .pb-nav {
   padding-bottom: calc(var(--bottom-nav-height) + var(--safe-bottom));

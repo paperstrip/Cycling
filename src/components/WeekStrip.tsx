@@ -4,6 +4,7 @@
  */
 
 import React from 'react';
+import { Check } from 'lucide-react';
 
 const DAY_LETTERS = ['L', 'M', 'M', 'J', 'V', 'S', 'D'];
 
@@ -68,17 +69,20 @@ export const WeekStrip: React.FC<WeekStripProps> = ({ rideDates }) => {
             >
               {day.getDate()}
             </span>
-            <span
-              className={`w-1.5 h-1.5 rounded-full ${
-                hasRidden
-                  ? isToday
-                    ? 'bg-stone-950'
-                    : 'bg-amber-500'
-                  : isToday
-                    ? 'bg-stone-900/25'
-                    : 'bg-stone-700'
-              }`}
-            />
+            {/* Une coche sur les jours roulés : la semaine se lit comme une
+                suite d'objectifs tenus, pas comme un calendrier neutre. */}
+            {hasRidden ? (
+              <Check
+                className={`w-3 h-3 ${isToday ? 'text-stone-950' : 'text-amber-500'}`}
+                strokeWidth={3.5}
+              />
+            ) : (
+              <span
+                className={`w-1.5 h-1.5 rounded-full ${
+                  isToday ? 'bg-stone-900/25' : 'bg-stone-700'
+                }`}
+              />
+            )}
           </div>
         );
       })}

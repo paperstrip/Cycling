@@ -244,12 +244,17 @@ export default function App() {
               <div className="w-10 h-10 rounded-2xl bg-amber-500 text-stone-950 flex items-center justify-center font-black text-base shrink-0">
                 {(cyclistProfile.name || 'C').charAt(0).toUpperCase()}
               </div>
-              <div className="min-w-0">
-                <div className="text-[11px] text-stone-400 leading-tight">{greetingLabel}</div>
-                <div className="text-[15px] font-black tracking-tight text-white truncate leading-tight">
-                  {(cyclistProfile.name || 'Cycliste').split(' ')[0]}
+              {/* Le prénom n'apparaît qu'ici sur les écrans qui n'ont pas de
+                  titre d'accueil ; sur « Séances » c'est le grand titre qui
+                  porte la salutation, et le répéter ferait doublon. */}
+              {activeTab !== 'workouts' && (
+                <div className="min-w-0">
+                  <div className="text-[11px] text-stone-400 leading-tight">{greetingLabel}</div>
+                  <div className="text-[15px] font-black tracking-tight text-white truncate leading-tight">
+                    {(cyclistProfile.name || 'Cycliste').split(' ')[0]}
+                  </div>
                 </div>
-              </div>
+              )}
             </button>
 
             {/* Desktop Navigation Tabs */}
