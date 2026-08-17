@@ -1,7 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { RideRecord } from '../types';
+import { RideRecord, CyclistProfile } from '../types';
 import { getAllRideRecords, deleteRideRecord, exportRideToGPX } from '../utils/storage';
 import { formatTimeHoursDisplay, formatTimeDisplay } from '../utils/planFlatten';
+import { loadTrainingContext } from '../utils/trainingContext';
+import type { TrainingMetrics } from '../utils/trainingMetrics';
+import { EvolutionPanel } from './EvolutionPanel';
 import {
   History as HistoryIcon,
   ArrowLeft,
@@ -21,12 +24,21 @@ import {
 interface HistoryScreenProps {
   onBack: () => void;
   onSelectRideToReRun?: (planName: string) => void;
+  cyclistProfile?: CyclistProfile;
 }
 
-export const HistoryScreen: React.FC<HistoryScreenProps> = ({ onBack, onSelectRideToReRun }) => {
+export const HistoryScreen: React.FC<HistoryScreenProps> = ({
+  onBack,
+  onSelectRideToReRun,
+  cyclistProfile,
+}) => {
   const [rides, setRides] = useState<RideRecord[]>([]);
   const [expandedRideId, setExpandedRideId] = useState<string | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
+  const [metrics, setMetrics] = useState<TrainingMetrics | null>(null);
+  // Le journal seul ne disait pas si l'on progresse ; l'onglet par défaut est
+  // donc la synthèse, et la liste reste accessible d'un toucher.
+  const [tab, setTab] = useState<'evolution' | 'journal'>('evolution');
 
   useEffect(() => {
     loadRides();
@@ -37,6 +49,9 @@ export const HistoryScreen: React.FC<HistoryScreenProps> = ({ onBack, onSelectRi
     const data = await getAllRideRecords();
     setRides(data);
     setLoading(false);
+    loadTrainingContext(cyclistProfile)
+      .then((ctx) => setMetrics(ctx.metrics))
+      .catch(() => setMetrics(null));
   };
 
   const handleDelete = async (id: string, e: React.MouseEvent) => {
@@ -80,6 +95,40 @@ export const HistoryScreen: React.FC<HistoryScreenProps> = ({ onBack, onSelectRi
         </h1>
       </div>
 
+      {/* Deux lectures : ce que ça donne dans le temps, et le détail sortie
+          par sortie. La synthèse d'abord, parce que c'est elle qui répond à
+          « est-ce que je progresse ». */}
+      {!loading && rides.length > 0 && (
+        <div className="flex items-center gap-2">
+          {(
+            [
+              { id: 'evolution', label: 'Évolution' },
+              { id: 'journal', label: `Sorties (${rides.length})` },
+            ] as const
+          ).map((entry) => (
+            <button
+              key={entry.id}
+              onClick={() => setTab(entry.id)}
+              className={`px-4 py-2 rounded-full text-[12px] font-bold cursor-pointer transition-colors ${
+                tab === entry.id
+                  ? 'bg-amber-500 text-stone-950'
+                  : 'bg-stone-900 border border-stone-800 text-stone-400 hover:text-white'
+              }`}
+            >
+              {entry.label}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {!loading && rides.length > 0 && tab === 'evolution' && (
+        metrics ? (
+          <EvolutionPanel metrics={metrics} />
+        ) : (
+          <div className="p-8 text-center text-stone-500 text-sm">Analyse en cours…</div>
+        )
+      )}
+
       {loading ? (
         <div className="p-12 text-center text-stone-500 text-sm">
           Chargement des sorties passées...
@@ -100,7 +149,7 @@ export const HistoryScreen: React.FC<HistoryScreenProps> = ({ onBack, onSelectRi
             Choisir une séance
           </button>
         </div>
-      ) : (
+      ) : tab === 'evolution' ? null : (
         <div className="space-y-3">
           {rides.map((ride) => {
             const isExpanded = expandedRideId === ride.id;

@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { TrainingProgram, ScheduledWorkout, WorkoutPlan } from '../types';
+import { computeProgramProgress } from '../utils/programProgress';
 import {
   Calendar,
   Award,
@@ -36,8 +37,14 @@ export const ProgramDashboard: React.FC<ProgramDashboardProps> = ({
     (w) => Math.ceil(w.dayNumber / 7) === selectedWeek
   );
 
-  const completedCount = program.workouts.filter((w) => w.isCompleted).length;
-  const progressPercent = Math.round((completedCount / program.workouts.length) * 100) || 0;
+  // Les jours de repos gonflaient le dénominateur : un programme dont toutes
+  // les séances étaient faites n'affichait jamais 100 %.
+  const progress = computeProgramProgress(program);
+  const completedCount = progress.completedSessions;
+  const progressPercent =
+    progress.totalSessions > 0
+      ? Math.round((progress.completedSessions / progress.totalSessions) * 100)
+      : 0;
 
   return (
     <div className="space-y-6">

@@ -495,7 +495,10 @@ export default function App() {
 
         {/* TAB 6: Rides History */}
         {activeTab === 'history' && (
-          <HistoryScreen onBack={() => setActiveTab('workouts')} />
+          <HistoryScreen
+            onBack={() => setActiveTab('workouts')}
+            cyclistProfile={cyclistProfile}
+          />
         )}
       </main>
 

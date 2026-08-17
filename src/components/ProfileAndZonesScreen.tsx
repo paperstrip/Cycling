@@ -1,5 +1,11 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { CyclistProfile, CyclistLevel, PrimaryGoalType } from '../types';
+import { loadTrainingContext } from '../utils/trainingContext';
+import {
+  recordFtpRevision,
+  suggestFtpRevision,
+  type FtpSuggestion,
+} from '../utils/fitnessProgression';
 import {
   calculatePowerZones,
   calculateHeartRateZones,
@@ -41,6 +47,35 @@ export const ProfileAndZonesScreen: React.FC<ProfileAndZonesScreenProps> = ({
   const [formData, setFormData] = useState<CyclistProfile>({ ...profile });
   const [savedSuccess, setSavedSuccess] = useState<boolean>(false);
   const [activeZoneTab, setActiveZoneTab] = useState<'power' | 'hr'>('power');
+  // Révision de FTP déduite des allures réellement tenues. Proposée, jamais
+  // appliquée d'office : modifier la FTP change toutes les zones.
+  const [ftpSuggestion, setFtpSuggestion] = useState<FtpSuggestion | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    loadTrainingContext(profile)
+      .then(({ metrics }) => {
+        if (!cancelled) setFtpSuggestion(suggestFtpRevision(metrics, profile));
+      })
+      .catch(() => {
+        /* Sans historique lisible, on ne propose simplement rien. */
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [profile]);
+
+  const applyFtpSuggestion = () => {
+    if (!ftpSuggestion) return;
+    handleUpdate({ ftpWatts: ftpSuggestion.suggestedFtp });
+    recordFtpRevision();
+    setFtpSuggestion(null);
+  };
+
+  const dismissFtpSuggestion = () => {
+    recordFtpRevision();
+    setFtpSuggestion(null);
+  };
 
   const ftp = formData.ftpWatts || 240;
   const weight = formData.weightKg || 70;
@@ -102,6 +137,65 @@ export const ProfileAndZonesScreen: React.FC<ProfileAndZonesScreenProps> = ({
           <span>Relancer l'assistant de calibrage</span>
         </button>
       </div>
+
+      {/* Révision de FTP fondée sur les allures réellement tenues. La FTP ne
+          bougeait jamais après l'inscription alors qu'elle fixe toutes les
+          zones : quelqu'un qui progresse gardait des cibles trop faciles. */}
+      {ftpSuggestion && (
+        <div className="p-5 rounded-3xl bg-amber-500/10 border border-amber-500/30 space-y-3 animate-fade-up">
+          <div className="flex items-center gap-2">
+            <TrendingUp className="w-4 h-4 text-amber-400 shrink-0" />
+            <h3 className="text-sm font-black text-white">
+              Votre FTP a probablement changé
+            </h3>
+          </div>
+
+          <div className="flex items-center gap-3">
+            <div className="px-3 py-2 rounded-xl bg-stone-950 border border-stone-800 text-center">
+              <div className="text-[10px] uppercase text-stone-500 font-bold">Actuelle</div>
+              <div className="font-mono text-lg font-black text-stone-400">
+                {ftpSuggestion.currentFtp} W
+              </div>
+            </div>
+            <span className="text-amber-400 font-black">→</span>
+            <div className="px-3 py-2 rounded-xl bg-amber-500 text-center">
+              <div className="text-[10px] uppercase text-stone-900/70 font-bold">Proposée</div>
+              <div className="font-mono text-lg font-black text-stone-950">
+                {ftpSuggestion.suggestedFtp} W
+              </div>
+            </div>
+            <span className="font-mono text-sm font-bold text-amber-300">
+              {ftpSuggestion.changePercent > 0 ? '+' : ''}
+              {ftpSuggestion.changePercent} %
+            </span>
+          </div>
+
+          <p className="text-[12px] text-amber-200/90 leading-relaxed">
+            {ftpSuggestion.rationale}
+          </p>
+
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={applyFtpSuggestion}
+              className="px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-stone-950 text-[12px] font-black cursor-pointer transition-colors"
+            >
+              Appliquer {ftpSuggestion.suggestedFtp} W
+            </button>
+            <button
+              type="button"
+              onClick={dismissFtpSuggestion}
+              className="px-4 py-2 rounded-xl bg-stone-900 border border-stone-800 hover:border-stone-700 text-stone-300 text-[12px] font-bold cursor-pointer transition-colors"
+            >
+              Garder {ftpSuggestion.currentFtp} W
+            </button>
+          </div>
+          <p className="text-[10.5px] text-stone-500">
+            Après avoir appliqué, pensez à enregistrer le profil plus bas pour recalculer vos
+            zones.
+          </p>
+        </div>
+      )}
 
       {/* Hero Stats Card: W/kg and Level Gauge */}
       <div className="p-6 rounded-3xl bg-gradient-to-r from-stone-900 via-stone-900 to-amber-950/30 border border-stone-800 shadow-2xl grid grid-cols-1 sm:grid-cols-3 gap-6 items-center">
