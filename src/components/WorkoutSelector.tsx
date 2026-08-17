@@ -1,24 +1,17 @@
-import React, { useRef, useState } from 'react';
-import { WorkoutPlan, CyclistProfile, CyclingRoute, TrainingProgram } from '../types';
+import React, { useEffect, useRef, useState } from 'react';
+import { WorkoutPlan, CyclistProfile, TrainingProgram, RideRecord } from '../types';
 import { PRESET_WORKOUTS } from '../data/presetWorkouts';
 import { flattenWorkoutPlan, formatSecondsToMinutes } from '../utils/planFlatten';
+import { getAllRideRecords } from '../utils/storage';
 import { WorkoutProfileBar } from './WorkoutProfileBar';
+import { WorkoutHeroCard } from './WorkoutHeroCard';
+import { ProgressRing } from './ProgressRing';
+import { WeekStrip } from './WeekStrip';
 import { SectionHeader } from './SectionHeader';
 import {
-  Sparkles,
-  Play,
-  Clock,
-  Zap,
-  Route as RouteIcon,
+  Compass,
   MessageSquare,
-  Award,
   ChevronRight,
-  TrendingUp,
-  Flame,
-  Bike,
-  Activity,
-  Headphones,
-  Sliders,
   Check,
   ChevronDown,
 } from 'lucide-react';
@@ -35,12 +28,13 @@ interface WorkoutSelectorProps {
   onSelectPlan: (plan: WorkoutPlan) => void;
 }
 
+/** Objectif hebdomadaire par défaut, faute de programme actif. */
+const DEFAULT_WEEKLY_TARGET = 3;
+
 export const WorkoutSelector: React.FC<WorkoutSelectorProps> = ({
   onStartWorkout,
   onOpenCoachChat,
   onOpenRoutesTab,
-  onOpenProgramTab,
-  onOpenProfileTab,
   cyclistProfile,
   activeProgram,
   selectedPlan,
@@ -48,10 +42,48 @@ export const WorkoutSelector: React.FC<WorkoutSelectorProps> = ({
 }) => {
   const [filterCategory, setFilterCategory] = useState<'all' | 'vo2max' | 'seuil' | 'endurance' | 'recup'>('all');
   const [isBlockDetailOpen, setIsBlockDetailOpen] = useState<boolean>(false);
+  const [rides, setRides] = useState<RideRecord[]>([]);
   const catalogueRef = useRef<HTMLElement>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    getAllRideRecords()
+      .then((all) => {
+        if (!cancelled) setRides(all);
+      })
+      .catch(() => {
+        /* L'accueil reste utilisable sans historique. */
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const scrollToCatalogue = () =>
     catalogueRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+
+  // Semaine en cours : lundi 00 h 00.
+  const monday = (() => {
+    const d = new Date();
+    d.setHours(0, 0, 0, 0);
+    d.setDate(d.getDate() - ((d.getDay() + 6) % 7));
+    return d;
+  })();
+
+  const ridesThisWeek = rides.filter((r) => new Date(r.date).getTime() >= monday.getTime());
+  // Le programme ne stocke pas d'objectif hebdomadaire : on le déduit des
+  // séances planifiées qui ne sont pas des jours de repos.
+  const programSessionsPerWeek = activeProgram
+    ? Math.round(
+        activeProgram.workouts.filter((w) => w.type !== 'repos').length /
+          Math.max(1, activeProgram.durationWeeks),
+      )
+    : 0;
+  const weeklyTarget = programSessionsPerWeek || DEFAULT_WEEKLY_TARGET;
+  const weeklyKm = ridesThisWeek.reduce((acc, r) => acc + (r.totalDistanceKm || 0), 0);
+  const weeklyMinutes = Math.round(
+    ridesThisWeek.reduce((acc, r) => acc + (r.totalDurationSec || 0), 0) / 60,
+  );
 
   const filteredPresets = PRESET_WORKOUTS.filter((p) => {
     if (filterCategory === 'all') return true;
@@ -66,57 +98,35 @@ export const WorkoutSelector: React.FC<WorkoutSelectorProps> = ({
   const totalDurationSec = flattenedSteps.reduce((acc, step) => acc + step.durationSec, 0);
 
   return (
-    <div className="space-y-6 animate-fadeIn">
-      {/* Séance du jour : une carte, une action. Les métadonnées passent en
-          seconde lecture, sous le titre, au lieu d'une rangée de badges. */}
+    <div className="space-y-7 animate-fadeIn">
+      {/* La salutation est portée par l'en-tête ; ici on situe juste la semaine. */}
+      <section>
+        <WeekStrip rideDates={rides.map((r) => r.date)} />
+      </section>
+
+      {/* Séance du jour : une image, un titre, un bouton */}
       <section>
         <SectionHeader title="Votre séance" actionLabel="Changer" onAction={scrollToCatalogue} />
 
-        <div className="rounded-3xl bg-stone-900 border border-stone-800 overflow-hidden">
-          <div className="p-5 space-y-4">
-            <div>
-              <h3 className="text-[22px] leading-tight font-black text-white">{selectedPlan.nom}</h3>
-              <p className="text-[13px] text-stone-400 mt-1.5 leading-relaxed">
-                {selectedPlan.objectif}
-              </p>
-            </div>
+        <WorkoutHeroCard
+          eyebrow="Séance du jour"
+          title={selectedPlan.nom}
+          goal={selectedPlan.objectif}
+          steps={flattenedSteps}
+          chips={[
+            `${Math.round(totalDurationSec / 60)} min`,
+            `${flattenedSteps.length} blocs`,
+            selectedPlan.difficultyRating ? `Intensité ${selectedPlan.difficultyRating}/5` : 'Libre',
+          ]}
+          onStart={() => onStartWorkout(selectedPlan)}
+        />
 
-            {/* Trois chiffres, alignés, en une ligne lisible d'un coup d'œil */}
-            <div className="flex items-stretch rounded-2xl bg-stone-950 border border-stone-800 divide-x divide-stone-800">
-              {[
-                { value: `${Math.round(totalDurationSec / 60)} min`, label: 'Durée' },
-                { value: String(flattenedSteps.length), label: 'Blocs' },
-                {
-                  value: selectedPlan.difficultyRating ? `${selectedPlan.difficultyRating}/5` : '—',
-                  label: 'Intensité',
-                },
-              ].map((stat) => (
-                <div key={stat.label} className="flex-1 px-3 py-2.5 text-center">
-                  <div className="font-mono text-base font-bold text-white">{stat.value}</div>
-                  <div className="text-[10px] uppercase tracking-wider text-stone-500 mt-0.5">
-                    {stat.label}
-                  </div>
-                </div>
-              ))}
-            </div>
-
-            <WorkoutProfileBar steps={flattenedSteps} />
-
-            <button
-              id="btn-start-workout-hub"
-              onClick={() => onStartWorkout(selectedPlan)}
-              className="w-full py-4 rounded-2xl bg-amber-500 hover:bg-amber-400 text-stone-950 font-black text-sm uppercase tracking-wider flex items-center justify-center gap-2.5 cursor-pointer transition-colors"
-            >
-              <Play className="w-5 h-5 fill-stone-950" />
-              <span>Démarrer</span>
-            </button>
-          </div>
-
-          {/* Détails repliés : consignes, blocs et itinéraire ne s'imposent plus */}
+        {/* Détails repliés : consignes, blocs et itinéraire ne s'imposent plus */}
+        <div className="rounded-3xl bg-stone-900 border border-stone-800 mt-2.5 overflow-hidden">
           <button
             onClick={() => setIsBlockDetailOpen((v) => !v)}
             aria-expanded={isBlockDetailOpen}
-            className="w-full px-5 py-3 border-t border-stone-800 text-stone-400 hover:text-white text-xs font-bold flex items-center justify-between cursor-pointer transition-colors"
+            className="w-full px-5 py-3.5 text-stone-400 hover:text-white text-xs font-bold flex items-center justify-between cursor-pointer transition-colors"
           >
             <span>Détail de la séance</span>
             <ChevronDown
@@ -125,7 +135,9 @@ export const WorkoutSelector: React.FC<WorkoutSelectorProps> = ({
           </button>
 
           {isBlockDetailOpen && (
-            <div className="px-5 pb-5 pt-1 space-y-4 animate-fade-up border-t border-stone-800/60">
+            <div className="px-5 pb-5 space-y-4 animate-fade-up border-t border-stone-800/60 pt-4">
+              <WorkoutProfileBar steps={flattenedSteps} />
+
               {selectedPlan.coachTips && selectedPlan.coachTips.length > 0 && (
                 <ul className="space-y-1.5">
                   {selectedPlan.coachTips.map((tip, idx) => (
@@ -179,6 +191,59 @@ export const WorkoutSelector: React.FC<WorkoutSelectorProps> = ({
             </div>
           )}
         </div>
+      </section>
+
+      {/* Semaine en cours : l'anneau répond à « où j'en suis » sans calcul */}
+      <section>
+        <SectionHeader title="Cette semaine" />
+        <div className="rounded-3xl bg-stone-900 border border-stone-800 p-5 flex items-center gap-5">
+          <ProgressRing
+            value={weeklyTarget ? ridesThisWeek.length / weeklyTarget : 0}
+            centerValue={`${ridesThisWeek.length}/${weeklyTarget}`}
+            centerLabel="séances"
+          />
+          <div className="flex-1 min-w-0 space-y-3">
+            {[
+              { value: weeklyKm >= 100 ? Math.round(weeklyKm).toString() : weeklyKm.toFixed(1), unit: 'km parcourus' },
+              { value: weeklyMinutes.toString(), unit: 'minutes de selle' },
+            ].map((stat) => (
+              <div key={stat.unit}>
+                <div className="font-mono text-xl font-black text-white leading-none">
+                  {stat.value}
+                </div>
+                <div className="text-[11px] text-stone-500 mt-1">{stat.unit}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* Deux entrées sorties de la barre basse, où elles étaient illisibles */}
+      <section className="grid grid-cols-2 gap-2.5">
+        {[
+          {
+            label: 'Coach',
+            sub: 'Séance sur mesure',
+            icon: MessageSquare,
+            onClick: onOpenCoachChat,
+          },
+          { label: 'Parcours', sub: 'Itinéraires & GPS', icon: Compass, onClick: onOpenRoutesTab },
+        ].map((tile) => {
+          const Icon = tile.icon;
+          return (
+            <button
+              key={tile.label}
+              onClick={tile.onClick}
+              className="p-4 rounded-3xl bg-stone-900 border border-stone-800 hover:border-stone-700 text-left cursor-pointer transition-colors"
+            >
+              <div className="w-10 h-10 rounded-2xl bg-amber-500/15 text-amber-400 flex items-center justify-center">
+                <Icon className="w-5 h-5" />
+              </div>
+              <div className="text-[13.5px] font-bold text-white mt-3">{tile.label}</div>
+              <div className="text-[11px] text-stone-500 mt-0.5">{tile.sub}</div>
+            </button>
+          );
+        })}
       </section>
 
       {/* Catalogue : filtres en pastilles défilantes, cartes en liste dense
@@ -252,23 +317,6 @@ export const WorkoutSelector: React.FC<WorkoutSelectorProps> = ({
           })}
         </div>
       </section>
-
-      {/* Accès au coach : une ligne, pas une bannière */}
-      <button
-        onClick={onOpenCoachChat}
-        className="w-full p-4 rounded-2xl bg-stone-900 border border-stone-800 hover:border-stone-700 flex items-center gap-3 text-left cursor-pointer transition-colors"
-      >
-        <div className="w-9 h-9 rounded-xl bg-amber-500/15 text-amber-400 flex items-center justify-center shrink-0">
-          <MessageSquare className="w-4.5 h-4.5" />
-        </div>
-        <div className="flex-1 min-w-0">
-          <div className="text-[13px] font-bold text-white">Demander une séance sur mesure</div>
-          <div className="text-[11.5px] text-stone-400">
-            Selon votre forme, le temps dont vous disposez ou la météo
-          </div>
-        </div>
-        <ChevronRight className="w-4 h-4 text-stone-600 shrink-0" />
-      </button>
     </div>
   );
 };

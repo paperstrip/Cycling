@@ -4,7 +4,7 @@
  */
 
 import React from 'react';
-import { Zap, Compass, MessageSquare, Calendar, Activity, History } from 'lucide-react';
+import { Zap, Compass, MessageSquare, Calendar, Activity, History, Play } from 'lucide-react';
 import type { MainNavTab } from '../App';
 
 export interface NavItem {
@@ -25,48 +25,73 @@ export const NAV_ITEMS: NavItem[] = [
   { id: 'profile', short: 'Profil', label: 'Profil & Zones', icon: Activity },
 ];
 
+/**
+ * Destinations de la barre basse : quatre, plus le bouton central.
+ *
+ * Les six onglets tenaient sur une ligne mais chaque cible faisait moins de
+ * 60 px de large, avec des libellés de 9 px. « Parcours » et « Coach » sont
+ * désormais des entrées de l'accueil, où ils sont bien plus visibles qu'ici.
+ */
+const BAR_TABS: MainNavTab[] = ['workouts', 'program', 'history', 'profile'];
+
 interface BottomNavProps {
   activeTab: MainNavTab;
   onSelect: (tab: MainNavTab) => void;
+  /** Action principale du bouton central : lancer la séance sélectionnée. */
+  onPrimaryAction: () => void;
 }
 
 /**
- * Barre de navigation basse (mobile) : toutes les destinations sont atteignables
- * au pouce, sans défilement horizontal.
+ * Barre de navigation basse (mobile).
+ *
+ * Barre flottante détachée du bord plutôt que bandeau collé : le contenu
+ * défile visiblement dessous, et le bouton d'action principal peut déborder
+ * vers le haut au centre, là où le pouce tombe naturellement.
  */
-export const BottomNav: React.FC<BottomNavProps> = ({ activeTab, onSelect }) => {
+export const BottomNav: React.FC<BottomNavProps> = ({ activeTab, onSelect, onPrimaryAction }) => {
+  const items = BAR_TABS.map((id) => NAV_ITEMS.find((n) => n.id === id)!);
+  const left = items.slice(0, 2);
+  const right = items.slice(2);
+
+  const renderTab = (item: NavItem) => {
+    const Icon = item.icon;
+    const isSelected = activeTab === item.id;
+    return (
+      <button
+        key={item.id}
+        onClick={() => onSelect(item.id)}
+        aria-current={isSelected ? 'page' : undefined}
+        className={`flex-1 h-full flex flex-col items-center justify-center gap-1 cursor-pointer transition-colors ${
+          isSelected ? 'text-amber-400' : 'text-stone-500 active:text-stone-300'
+        }`}
+      >
+        <Icon className="w-[1.3rem] h-[1.3rem]" />
+        <span className="text-[9.5px] font-bold tracking-tight leading-none">{item.short}</span>
+      </button>
+    );
+  };
+
   return (
-    <nav
-      aria-label="Navigation principale"
-      className="md:hidden fixed bottom-0 left-0 right-0 z-50 bg-stone-950/95 backdrop-blur-lg border-t border-stone-800 px-safe pb-safe"
-    >
-      <div className="flex items-stretch justify-around h-[4.5rem] pt-1.5">
-        {NAV_ITEMS.map((item) => {
-          const Icon = item.icon;
-          const isSelected = activeTab === item.id;
-          return (
-            <button
-              key={item.id}
-              onClick={() => onSelect(item.id)}
-              aria-current={isSelected ? 'page' : undefined}
-              className={`relative flex-1 flex flex-col items-center justify-start gap-1 pt-1.5 cursor-pointer transition-colors ${
-                isSelected ? 'text-amber-400' : 'text-stone-500 active:text-stone-300'
-              }`}
-            >
-              {/* Repère de l'onglet actif */}
-              <span
-                className={`absolute top-0 h-0.5 w-8 rounded-full transition-all ${
-                  isSelected ? 'bg-amber-400' : 'bg-transparent'
-                }`}
-              />
-              <Icon className="w-[1.35rem] h-[1.35rem]" />
-              <span className="text-[9.5px] font-bold tracking-tight leading-none">
-                {item.short}
-              </span>
-            </button>
-          );
-        })}
-      </div>
-    </nav>
+    <div className="md:hidden fixed bottom-0 left-0 right-0 z-50 px-page pb-safe-3 pointer-events-none">
+      <nav
+        aria-label="Navigation principale"
+        className="relative pointer-events-auto max-w-md mx-auto h-[4.25rem] rounded-[26px] bg-stone-900/95 backdrop-blur-xl border border-stone-800 shadow-2xl shadow-stone-950/60 flex items-stretch"
+      >
+        {left.map(renderTab)}
+
+        {/* Réserve la place du bouton central, qui déborde vers le haut */}
+        <div className="w-[4.5rem] shrink-0" aria-hidden="true" />
+
+        {right.map(renderTab)}
+
+        <button
+          onClick={onPrimaryAction}
+          aria-label="Démarrer la séance"
+          className="absolute left-1/2 -translate-x-1/2 -top-5 w-[3.75rem] h-[3.75rem] rounded-full bg-amber-500 hover:bg-amber-400 text-stone-950 flex items-center justify-center cursor-pointer transition-colors shadow-lg shadow-amber-500/30 ring-4 ring-stone-950"
+        >
+          <Play className="w-6 h-6 fill-stone-950 translate-x-[1px]" />
+        </button>
+      </nav>
+    </div>
   );
 };

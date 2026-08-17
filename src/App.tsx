@@ -59,6 +59,9 @@ export default function App() {
 
   // Profile and Program State
   const [cyclistProfile, setCyclistProfile] = useState<CyclistProfile>(getStoredProfile());
+  const greetingHour = new Date().getHours();
+  const greetingLabel =
+    greetingHour < 12 ? 'Bonjour' : greetingHour < 18 ? 'Bon après-midi' : 'Bonsoir';
   const [activeProgram, setActiveProgram] = useState<TrainingProgram | null>(getStoredActiveProgram());
 
   // Modals
@@ -232,28 +235,22 @@ export default function App() {
         <header className="bg-stone-950/90 backdrop-blur-md border-b border-stone-800">
         <div className="max-w-7xl mx-auto px-4 sm:px-6">
           <div className="flex items-center justify-between h-14 sm:h-18 gap-3">
-            {/* Logo and App Title */}
-            <div
-              onClick={() => setActiveTab('workouts')}
-              className="flex items-center gap-2.5 cursor-pointer select-none shrink-0"
+            {/* Identité : à qui on parle, pas comment l'app s'appelle. Le nom
+                du produit n'apprend rien à quelqu'un qui l'a déjà installée. */}
+            <button
+              onClick={() => setActiveTab('profile')}
+              className="flex items-center gap-2.5 cursor-pointer select-none shrink-0 min-w-0 text-left"
             >
-              <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-2xl bg-amber-500 text-stone-950 flex items-center justify-center font-black shadow-lg shadow-amber-500/20">
-                <Zap className="w-5 h-5 fill-stone-950" />
+              <div className="w-10 h-10 rounded-2xl bg-amber-500 text-stone-950 flex items-center justify-center font-black text-base shrink-0">
+                {(cyclistProfile.name || 'C').charAt(0).toUpperCase()}
               </div>
-              <div>
-                <div className="flex items-center gap-2">
-                  <span className="text-base sm:text-lg font-black tracking-tight text-white">
-                    CycloCoach
-                  </span>
-                  <span className="text-[10px] font-black uppercase px-2 py-0.2 rounded bg-amber-500/20 text-amber-400 border border-amber-500/30">
-                    Pro
-                  </span>
-                </div>
-                <div className="text-[10.5px] text-stone-400 hidden sm:block">
-                  Coaching vocal & parcours GPS sur-mesure
+              <div className="min-w-0">
+                <div className="text-[11px] text-stone-400 leading-tight">{greetingLabel}</div>
+                <div className="text-[15px] font-black tracking-tight text-white truncate leading-tight">
+                  {(cyclistProfile.name || 'Cycliste').split(' ')[0]}
                 </div>
               </div>
-            </div>
+            </button>
 
             {/* Desktop Navigation Tabs */}
             <nav className="hidden md:flex items-center gap-1 bg-stone-900/80 p-1.5 rounded-2xl border border-stone-800">
@@ -283,41 +280,25 @@ export default function App() {
               <button
                 id="btn-header-api-key"
                 onClick={() => setIsApiKeyModalOpen(true)}
-                className={`p-2.5 rounded-xl border text-xs font-bold flex items-center gap-1.5 cursor-pointer transition-colors ${
+                className={`w-10 h-10 rounded-2xl flex items-center justify-center cursor-pointer transition-colors ${
                   isApiKeyConfigured
-                    ? 'bg-stone-900 hover:bg-stone-800 border-stone-800 hover:border-stone-700 text-stone-400'
-                    : 'bg-amber-500/15 hover:bg-amber-500/25 border-amber-500/40 text-amber-400'
+                    ? 'bg-stone-900 hover:bg-stone-800 text-stone-400'
+                    : 'bg-amber-500/15 hover:bg-amber-500/25 text-amber-400'
                 }`}
                 title="Clé API Gemini (fonctions IA)"
+                aria-label="Clé API Gemini"
               >
-                <KeyRound className="w-4 h-4" />
+                <KeyRound className="w-[1.15rem] h-[1.15rem]" />
               </button>
 
               <button
                 id="btn-header-voice-modal"
                 onClick={() => setIsVoiceModalOpen(true)}
-                className="p-2.5 sm:px-3 sm:py-2 rounded-xl bg-stone-900 hover:bg-stone-800 border border-stone-800 hover:border-stone-700 text-xs font-bold text-amber-400 flex items-center gap-1.5 cursor-pointer transition-colors"
+                className="w-10 h-10 rounded-2xl bg-stone-900 hover:bg-stone-800 text-stone-400 flex items-center justify-center cursor-pointer transition-colors"
                 title="Ambiance oreillette & voix du coach"
+                aria-label="Voix du coach"
               >
-                <Headphones className="w-4 h-4" />
-                <span className="hidden sm:inline">Oreillette Radio</span>
-              </button>
-
-              <button
-                onClick={() => setActiveTab('profile')}
-                className="p-1.5 sm:px-3 sm:py-1.5 rounded-xl bg-stone-900 hover:bg-stone-850 border border-stone-800 text-left flex items-center gap-2 cursor-pointer transition-colors"
-              >
-                <div className="w-7 h-7 rounded-lg bg-amber-500/20 text-amber-400 font-black text-xs flex items-center justify-center">
-                  {cyclistProfile.name.charAt(0).toUpperCase()}
-                </div>
-                <div className="hidden sm:block text-left">
-                  <div className="text-[11px] font-bold text-white leading-tight">
-                    {cyclistProfile.name}
-                  </div>
-                  <div className="text-[9px] font-mono text-stone-400">
-                    {cyclistProfile.ftpWatts || 240} W • {cyclistProfile.homeCity || 'GPS'}
-                  </div>
-                </div>
+                <Headphones className="w-[1.15rem] h-[1.15rem]" />
               </button>
             </div>
           </div>
@@ -362,20 +343,20 @@ export default function App() {
 
         {/* API Key Notice: IA features disabled until a Gemini key is provided */}
         {!isApiKeyConfigured && (
-          <div className="mb-5 p-3 rounded-2xl bg-amber-500/10 border border-amber-500/30 flex flex-wrap items-center gap-2.5 text-amber-300 text-xs">
+          /* Une ligne, pas un pavé : l'app reste utilisable sans clé, l'avis ne
+             doit donc pas occuper le tiers de l'écran d'accueil. */
+          <button
+            onClick={() => setIsApiKeyModalOpen(true)}
+            className="w-full mb-5 px-3.5 py-2.5 rounded-2xl bg-amber-500/10 border border-amber-500/30 flex items-center gap-2.5 text-left cursor-pointer hover:bg-amber-500/15 transition-colors"
+          >
             <KeyRound className="w-4 h-4 shrink-0 text-amber-400" />
-            <span className="flex-1 min-w-[200px]">
-              Aucune clé Gemini enregistrée : le coach IA, la génération de séances et la voix studio
-              sont désactivés. Les séances préenregistrées, le GPS et la voix du navigateur restent
-              disponibles.
+            <span className="flex-1 min-w-0 text-[12px] text-amber-300 truncate">
+              Fonctions IA désactivées — aucune clé enregistrée
             </span>
-            <button
-              onClick={() => setIsApiKeyModalOpen(true)}
-              className="px-3.5 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-stone-950 font-black text-[11px] uppercase tracking-wider cursor-pointer transition-colors"
-            >
-              Ajouter ma clé
-            </button>
-          </div>
+            <span className="text-[11px] font-black uppercase tracking-wider text-amber-400 shrink-0">
+              Ajouter
+            </span>
+          </button>
         )}
 
         {/* GPS Notice Warning if denied */}
@@ -501,7 +482,11 @@ export default function App() {
       )}
 
       {/* Barre de navigation basse (mobile) */}
-      <BottomNav activeTab={activeTab} onSelect={setActiveTab} />
+      <BottomNav
+        activeTab={activeTab}
+        onSelect={setActiveTab}
+        onPrimaryAction={() => handleStartWorkout(activePlan)}
+      />
 
       {/* Invite d'installation : hors de l'en-tête collant pour passer
           au-dessus de la barre de navigation basse. */}

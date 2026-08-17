@@ -13,8 +13,9 @@
   --safe-left: env(safe-area-inset-left, 0px);
   --safe-right: env(safe-area-inset-right, 0px);
 
-  /* Hauteur de la barre de navigation basse, réservée dans le flux de page. */
-  --bottom-nav-height: 4.5rem;
+  /* Encombrement de la barre basse flottante : sa hauteur, plus la marge
+     qui la détache du bord de l'écran. */
+  --bottom-nav-height: 5.5rem;
 }
 
 html {
