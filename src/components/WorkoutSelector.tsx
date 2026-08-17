@@ -5,6 +5,7 @@ import { flattenWorkoutPlan, formatSecondsToMinutes } from '../utils/planFlatten
 import { getAllRideRecords } from '../utils/storage';
 import { WorkoutProfileBar } from './WorkoutProfileBar';
 import { WorkoutHeroCard } from './WorkoutHeroCard';
+import { WorkoutArtwork, artworkForWorkout } from './WorkoutArtwork';
 import { ProgressRing } from './ProgressRing';
 import { WeekStrip } from './WeekStrip';
 import { SectionHeader } from './SectionHeader';
@@ -110,9 +111,9 @@ export const WorkoutSelector: React.FC<WorkoutSelectorProps> = ({
 
         <WorkoutHeroCard
           eyebrow="Séance du jour"
+          artwork={artworkForWorkout(selectedPlan)}
           title={selectedPlan.nom}
           goal={selectedPlan.objectif}
-          steps={flattenedSteps}
           chips={[
             `${Math.round(totalDurationSec / 60)} min`,
             `${flattenedSteps.length} blocs`,
@@ -225,22 +226,41 @@ export const WorkoutSelector: React.FC<WorkoutSelectorProps> = ({
             label: 'Coach',
             sub: 'Séance sur mesure',
             icon: MessageSquare,
+            art: 'chrono' as const,
             onClick: onOpenCoachChat,
           },
-          { label: 'Parcours', sub: 'Itinéraires & GPS', icon: Compass, onClick: onOpenRoutesTab },
+          {
+            label: 'Parcours',
+            sub: 'Itinéraires & GPS',
+            icon: Compass,
+            art: 'route' as const,
+            onClick: onOpenRoutesTab,
+          },
         ].map((tile) => {
           const Icon = tile.icon;
           return (
             <button
               key={tile.label}
               onClick={tile.onClick}
-              className="p-4 rounded-3xl bg-stone-900 border border-stone-800 hover:border-stone-700 text-left cursor-pointer transition-colors"
+              className="relative overflow-hidden p-4 pt-14 rounded-3xl bg-stone-900 border border-stone-800 hover:border-stone-700 text-left cursor-pointer transition-colors"
             >
-              <div className="w-10 h-10 rounded-2xl bg-amber-500/15 text-amber-400 flex items-center justify-center">
-                <Icon className="w-5 h-5" />
+              <WorkoutArtwork
+                variant={tile.art}
+                className="absolute inset-x-0 top-0 w-full h-24 opacity-60"
+              />
+              <div
+                className="absolute inset-0"
+                style={{
+                  background: 'linear-gradient(to top, #1b1d21 42%, rgba(27,29,33,0.55) 100%)',
+                }}
+              />
+              <div className="relative">
+                <div className="w-9 h-9 rounded-xl bg-amber-500/15 text-amber-400 flex items-center justify-center">
+                  <Icon className="w-4.5 h-4.5" />
+                </div>
+                <div className="text-[13.5px] font-bold text-white mt-2.5">{tile.label}</div>
+                <div className="text-[11px] text-stone-500 mt-0.5">{tile.sub}</div>
               </div>
-              <div className="text-[13.5px] font-bold text-white mt-3">{tile.label}</div>
-              <div className="text-[11px] text-stone-500 mt-0.5">{tile.sub}</div>
             </button>
           );
         })}
@@ -290,14 +310,24 @@ export const WorkoutSelector: React.FC<WorkoutSelectorProps> = ({
                     : 'bg-stone-900 border-stone-800 hover:border-stone-700'
                 }`}
               >
-                {/* Durée en pastille : le critère de choix numéro un */}
-                <div
-                  className={`w-14 shrink-0 text-center rounded-xl py-2 ${
-                    isSelected ? 'bg-amber-500 text-stone-950' : 'bg-stone-950 text-white'
-                  }`}
-                >
-                  <div className="font-mono text-base font-bold leading-none">{durMin}</div>
-                  <div className="text-[9px] uppercase tracking-wider opacity-70 mt-0.5">min</div>
+                {/* Vignette illustrée, la durée posée dessus : on reconnaît le
+                    type de séance avant même d'avoir lu son nom. */}
+                <div className="relative w-16 h-16 shrink-0 rounded-2xl overflow-hidden bg-stone-950">
+                  <WorkoutArtwork
+                    variant={artworkForWorkout(preset)}
+                    className="absolute inset-0 w-full h-full"
+                  />
+                  <div className="absolute inset-0 bg-stone-950/55" />
+                  <div
+                    className={`absolute inset-0 flex flex-col items-center justify-center ${
+                      isSelected ? 'text-amber-400' : 'text-white'
+                    }`}
+                  >
+                    <span className="font-mono text-base font-bold leading-none">{durMin}</span>
+                    <span className="text-[9px] uppercase tracking-wider opacity-70 mt-0.5">
+                      min
+                    </span>
+                  </div>
                 </div>
 
                 <div className="flex-1 min-w-0">

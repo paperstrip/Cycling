@@ -6,78 +6,45 @@
 import React from 'react';
 import { Play } from 'lucide-react';
 import type { ExecutionStep, IntensityZone } from '../types';
-
-const ZONE_HEIGHT: Record<IntensityZone, number> = {
-  facile: 34,
-  moyen: 56,
-  seuil: 78,
-  a_fond: 100,
-};
-
-const ZONE_FILL: Record<IntensityZone, string> = {
-  facile: 'bg-stone-700',
-  moyen: 'bg-stone-600',
-  seuil: 'bg-amber-700',
-  a_fond: 'bg-amber-500',
-};
+import { WorkoutArtwork, type ArtworkVariant } from './WorkoutArtwork';
 
 interface WorkoutHeroCardProps {
   title: string;
   goal: string;
-  steps: ExecutionStep[];
   /** Pastilles de contexte : durée, nombre de blocs, difficulté. */
   chips: string[];
   eyebrow: string;
+  artwork: ArtworkVariant;
   onStart: () => void;
 }
 
 /**
- * Carte de tête de l'accueil.
- *
- * Les applications de sport mettent une photo pleine largeur derrière le titre.
- * Ici la place de la photo est tenue par le profil d'intensité de la séance,
- * dessiné en grand sur toute la carte : c'est la même composition — une image
- * qui occupe le cadre, le texte posé dessus — mais l'image dit quelque chose
- * de vrai sur la séance au lieu d'être un décor interchangeable.
+ * Carte de tête de l'accueil : une illustration pleine largeur, le titre posé
+ * dessus, un seul bouton. Le détail chiffré de la séance vit ailleurs — ici on
+ * répond à « qu'est-ce que je fais aujourd'hui, et est-ce que j'y vais ».
  */
 export const WorkoutHeroCard: React.FC<WorkoutHeroCardProps> = ({
   title,
   goal,
-  steps,
   chips,
   eyebrow,
+  artwork,
   onStart,
 }) => {
-  const totalSec = steps.reduce((acc, s) => acc + s.durationSec, 0) || 1;
-
   return (
     <div className="relative rounded-[28px] overflow-hidden bg-stone-900 min-h-[268px] flex flex-col justify-end">
-      {/* Fond : le profil de la séance, suspendu au bord haut de la carte.
-          Suspendu plutôt que posé au sol, parce que les barres sont les plus
-          hautes là où le texte se pose — les faire descendre du haut laisse le
-          bas de la carte libre pour le titre. */}
-      <div className="absolute inset-0 flex items-start gap-[3px] px-1" aria-hidden="true">
-        {steps.map((step, idx) => (
-          <div
-            key={idx}
-            className="h-full flex items-start min-w-[2px]"
-            style={{ width: `${(step.durationSec / totalSec) * 100}%` }}
-          >
-            <div
-              className={`w-full rounded-b-sm ${ZONE_FILL[step.targetIntensity]}`}
-              style={{ height: `${ZONE_HEIGHT[step.targetIntensity]}%` }}
-            />
-          </div>
-        ))}
-      </div>
+      {/* Illustration de fond, à la place qu'occuperait une photo. Elle est
+          cantonnée à la moitié haute : son sujet est posé sur sa ligne
+          d'horizon, et le voile de lecture assombrit le bas de la carte. */}
+      <WorkoutArtwork variant={artwork} className="absolute inset-x-0 top-0 w-full h-[62%]" />
 
-      {/* Voile de lecture : le titre doit tenir par-dessus les barres. */}
+      {/* Voile de lecture : le titre doit tenir par-dessus l'illustration. */}
       <div
         className="absolute inset-0"
         aria-hidden="true"
         style={{
           background:
-            'linear-gradient(to top, #1c1917 32%, rgba(28,25,23,0.82) 58%, rgba(28,25,23,0.34) 100%)',
+            'linear-gradient(to top, #1b1d21 42%, rgba(27,29,33,0.42) 78%, rgba(27,29,33,0) 100%)',
         }}
       />
 

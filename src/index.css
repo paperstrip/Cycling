@@ -4,6 +4,23 @@
  * Réglages globaux orientés application mobile / PWA.
  */
 
+/*
+ * Palette sombre.
+ *
+ * L'app utilisait le `stone` de Tailwind, dont l'extrémité basse frôle le noir
+ * pur (#0c0a09) : sur un écran OLED les cartes ne se détachent plus du fond et
+ * l'ensemble paraît dur. On redéfinit ici les quatre nuances les plus sombres
+ * en gris légèrement plus clairs et un peu moins bruns, ce qui redonne de la
+ * profondeur sans toucher aux centaines de classes déjà écrites.
+ */
+@theme {
+  --color-stone-950: #131417; /* fond de page */
+  --color-stone-900: #1b1d21; /* cartes */
+  --color-stone-850: #22252a; /* survol */
+  --color-stone-800: #2b2f36; /* bordures, aplats secondaires */
+  --color-stone-700: #3d424b;
+}
+
 :root {
   color-scheme: dark;
 
