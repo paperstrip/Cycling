@@ -11,13 +11,7 @@ import { ScreenTitle } from './ScreenTitle';
 import { ProgressRing } from './ProgressRing';
 import { WeekStrip } from './WeekStrip';
 import { SectionHeader } from './SectionHeader';
-import {
-  Compass,
-  MessageSquare,
-  ChevronRight,
-  Check,
-  ChevronDown,
-} from 'lucide-react';
+import { Compass, SlidersHorizontal, ChevronRight, ChevronDown } from 'lucide-react';
 
 interface WorkoutSelectorProps {
   onStartWorkout: (plan: WorkoutPlan) => void;
@@ -36,8 +30,8 @@ const DEFAULT_WEEKLY_TARGET = 3;
 
 export const WorkoutSelector: React.FC<WorkoutSelectorProps> = ({
   onStartWorkout,
-  onOpenCoachChat,
   onOpenRoutesTab,
+  onOpenProfileTab,
   cyclistProfile,
   activeProgram,
   selectedPlan,
@@ -233,18 +227,18 @@ export const WorkoutSelector: React.FC<WorkoutSelectorProps> = ({
       <section className="grid grid-cols-2 gap-2.5">
         {[
           {
-            label: 'Coach',
-            sub: 'Séance sur mesure',
-            icon: MessageSquare,
-            art: 'chrono' as const,
-            onClick: onOpenCoachChat,
-          },
-          {
             label: 'Parcours',
             sub: 'Itinéraires & GPS',
             icon: Compass,
             art: 'route' as const,
             onClick: onOpenRoutesTab,
+          },
+          {
+            label: 'Profil',
+            sub: 'Zones & calibrage',
+            icon: SlidersHorizontal,
+            art: 'chrono' as const,
+            onClick: onOpenProfileTab,
           },
         ].map((tile) => {
           const Icon = tile.icon;

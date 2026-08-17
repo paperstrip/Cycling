@@ -29,10 +29,13 @@ export const NAV_ITEMS: NavItem[] = [
  * Destinations de la barre basse : quatre, plus le bouton central.
  *
  * Les six onglets tenaient sur une ligne mais chaque cible faisait moins de
- * 60 px de large, avec des libellés de 9 px. « Parcours » et « Coach » sont
- * désormais des entrées de l'accueil, où ils sont bien plus visibles qu'ici.
+ * 60 px de large, avec des libellés de 9 px. Le coach garde sa place ici, à
+ * portée de pouce : c'est une destination qu'on ouvre en cours de journée,
+ * pas seulement depuis l'accueil. « Parcours » et « Profil » sortent de la
+ * barre — le premier devient une entrée de l'accueil, le second s'ouvre en
+ * touchant l'avatar de l'en-tête.
  */
-const BAR_TABS: MainNavTab[] = ['workouts', 'program', 'history', 'profile'];
+const BAR_TABS: MainNavTab[] = ['workouts', 'coach', 'program', 'history'];
 
 interface BottomNavProps {
   activeTab: MainNavTab;
