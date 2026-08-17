@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { CyclingRoute, RouteWaypoint, CyclistProfile, WorkoutPlan } from '../types';
 import {
   generateLocalLoopRoute,
+  buildEstimatedLoopRoute,
   searchLocation,
   reverseGeocode,
   downloadGpxFile,
@@ -54,10 +55,12 @@ export const RoutesExplorerScreen: React.FC<RoutesExplorerScreenProps> = ({
   const [terrain, setTerrain] = useState<'plat' | 'vallonne' | 'montagne' | 'urbain_et_campagne'>('vallonne');
   const [bikeType, setBikeType] = useState<'route' | 'gravel' | 'clm' | 'polyvalent'>('route');
 
+  // L'état initial doit rester synchrone : le calage sur routes est un appel
+  // réseau, il se fait juste après, au premier rendu.
   const [currentRoute, setCurrentRoute] = useState<CyclingRoute>(() => {
     const saved = getSavedRoutes();
     if (saved.length > 0) return saved[0];
-    return generateLocalLoopRoute(
+    return buildEstimatedLoopRoute(
       cyclistProfile.homeCoordinates || { lat: 48.8566, lng: 2.3522 },
       cyclistProfile.homeCity || 'Paris',
       40,
@@ -65,6 +68,36 @@ export const RoutesExplorerScreen: React.FC<RoutesExplorerScreenProps> = ({
       'route'
     );
   });
+  const [isRouting, setIsRouting] = useState<boolean>(false);
+
+  /**
+   * Calcule un parcours et l'installe.
+   *
+   * Centralisé : les quatre points d'entrée — bouton, GPS, choix de ville,
+   * premier rendu — doivent tous afficher l'attente et signaler un repli sur
+   * l'estimation, sans quoi on croirait rouler sur un tracé réel.
+   */
+  const buildRoute = async (
+    coords: { lat: number; lng: number },
+    name: string,
+    successMessage: string,
+  ) => {
+    setIsRouting(true);
+    try {
+      const route = await generateLocalLoopRoute(coords, name, distanceKm, terrain, bikeType);
+      setCurrentRoute(route);
+      setIsSaved(false);
+      showNotice(
+        route.routeSource === 'roads'
+          ? successMessage
+          : `${successMessage} — tracé approximatif : le service d'itinéraires est injoignable.`,
+      );
+    } catch {
+      showNotice("Impossible de calculer l'itinéraire pour le moment.");
+    } finally {
+      setIsRouting(false);
+    }
+  };
 
   const [savedRoutesList, setSavedRoutesList] = useState<CyclingRoute[]>(getSavedRoutes());
   const [searchResults, setSearchResults] = useState<LocationSearchResult[]>([]);
@@ -161,10 +194,7 @@ export const RoutesExplorerScreen: React.FC<RoutesExplorerScreenProps> = ({
   }, [currentRoute, currentCoords]);
 
   const handleGenerateNewRoute = () => {
-    const newRoute = generateLocalLoopRoute(currentCoords, cityInput, distanceKm, terrain, bikeType);
-    setCurrentRoute(newRoute);
-    setIsSaved(false);
-    showNotice(`Nouvelle boucle de ${distanceKm} km générée à ${cityInput}`);
+    buildRoute(currentCoords, cityInput, `Nouvelle boucle de ${distanceKm} km à ${cityInput}`);
   };
 
   const handleDetectGps = () => {
@@ -178,9 +208,7 @@ export const RoutesExplorerScreen: React.FC<RoutesExplorerScreenProps> = ({
           setCityInput(detectedCity);
           if (onUpdateProfileCity) onUpdateProfileCity(detectedCity, coords);
 
-          const newRoute = generateLocalLoopRoute(coords, detectedCity, distanceKm, terrain, bikeType);
-          setCurrentRoute(newRoute);
-          showNotice(`Position GPS détectée : ${detectedCity}`);
+          await buildRoute(coords, detectedCity, `Position GPS détectée : ${detectedCity}`);
         },
         (err) => {
           showNotice('Impossible d\'obtenir la position GPS (autorisation requise).');
@@ -209,9 +237,7 @@ export const RoutesExplorerScreen: React.FC<RoutesExplorerScreenProps> = ({
     setSearchResults([]);
     if (onUpdateProfileCity) onUpdateProfileCity(name, coords);
 
-    const newRoute = generateLocalLoopRoute(coords, name, distanceKm, terrain, bikeType);
-    setCurrentRoute(newRoute);
-    showNotice(`Localisation définie sur ${name}`);
+    buildRoute(coords, name, `Localisation définie sur ${name}`);
   };
 
   const handleSaveRoute = () => {
@@ -304,14 +330,14 @@ export const RoutesExplorerScreen: React.FC<RoutesExplorerScreenProps> = ({
               <Compass className="w-5 h-5" />
             </span>
             <h2 className="text-xl sm:text-2xl font-black text-white">
-              Itinéraires & Cartes sur Vraies Routes
+              Itinéraires & Cartes
             </h2>
             <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 font-bold">
               GPS / OpenStreetMap
             </span>
           </div>
           <p className="text-xs text-stone-400 mt-1">
-            Générez des boucles d'entraînement réelles autour de chez vous, importez vos traces GPX et calibrez votre allure.
+            Générez des boucles autour de chez vous sur le réseau routier OpenStreetMap, importez vos traces GPX et calibrez votre allure.
           </p>
         </div>
 
@@ -578,8 +604,32 @@ export const RoutesExplorerScreen: React.FC<RoutesExplorerScreenProps> = ({
             {/* Map Overlay Badge */}
             <div className="absolute top-3 right-3 z-20 bg-stone-950/85 backdrop-blur-sm border border-stone-800 rounded-xl px-3 py-1.5 text-[11px] font-mono text-stone-300 flex items-center gap-2">
               <span className="text-amber-400 font-bold">{currentRoute.estimatedDistanceKm.toFixed(1)} km</span>
-              <span>•</span>
-              <span className="text-cyan-400 font-bold">+{currentRoute.totalAscentM} m D+</span>
+              {/* Le dénivelé n'est affiché que s'il vient d'un modèle altimétrique
+                  réel. Afficher un chiffre inventé serait pire que ne rien dire. */}
+              {currentRoute.elevationSource === 'measured' && (
+                <>
+                  <span>•</span>
+                  <span className="text-cyan-400 font-bold">+{currentRoute.totalAscentM} m D+</span>
+                </>
+              )}
+            </div>
+
+            {/* Provenance du tracé : la distinction est décisive avant de partir
+                rouler sur un itinéraire qu'on ne connaît pas. */}
+            <div className="absolute top-3 left-3 z-20 flex items-center gap-1.5">
+              {isRouting ? (
+                <span className="px-2.5 py-1 rounded-lg bg-stone-950/85 backdrop-blur-sm border border-stone-800 text-[10.5px] font-bold text-amber-300">
+                  Calcul de l'itinéraire…
+                </span>
+              ) : currentRoute.routeSource === 'estimation' ? (
+                <span className="px-2.5 py-1 rounded-lg bg-amber-500/20 backdrop-blur-sm border border-amber-500/40 text-[10.5px] font-bold text-amber-300">
+                  Tracé approximatif
+                </span>
+              ) : currentRoute.routeSource === 'roads' ? (
+                <span className="px-2.5 py-1 rounded-lg bg-emerald-500/20 backdrop-blur-sm border border-emerald-500/40 text-[10.5px] font-bold text-emerald-300">
+                  Routes réelles
+                </span>
+              ) : null}
             </div>
           </div>
 

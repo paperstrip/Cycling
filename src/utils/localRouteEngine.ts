@@ -1,4 +1,5 @@
 import { CyclingRoute, RouteWaypoint } from '../types';
+import { snapToRoads } from './roadRouting';
 
 export interface LocationSearchResult {
   displayName: string;
@@ -70,7 +71,7 @@ export async function reverseGeocode(lat: number, lng: number): Promise<string> 
 /**
  * Generates realistic geographic loop points and elevation profile around given coordinates
  */
-export function generateLocalLoopRoute(
+export function buildEstimatedLoopRoute(
   origin: { lat: number; lng: number },
   cityName: string,
   targetDistanceKm: number = 35,
@@ -200,7 +201,7 @@ export function generateLocalLoopRoute(
   return {
     id: `route-local-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
     name: `Boucle ${targetDistanceKm} km autour de ${cityName}`,
-    description: `Parcours sur routes réelles et secondaires optimisé pour l'entraînement cycliste au départ de ${cityName}.`,
+    description: `Boucle estimée autour de ${cityName}. Le tracé n'a pas pu être calé sur le réseau routier : distances et dénivelé sont approximatifs.`,
     startLocationName: cityName,
     originCoords: origin,
     estimatedDistanceKm: targetDistanceKm,
@@ -219,6 +220,126 @@ export function generateLocalLoopRoute(
     ],
     surface: surfaceType,
     isCustom: true,
+    routeSource: 'estimation',
+    elevationSource: 'estimated',
+  };
+}
+
+/**
+ * Point situé à une fraction donnée du parcours, mesurée en distance.
+ *
+ * Le routeur renvoie des points inégalement espacés — denses dans les virages,
+ * espacés en ligne droite. Découper par index placerait donc les repères au
+ * mauvais endroit ; on découpe par distance cumulée.
+ */
+function pointAtFraction(
+  points: { lat: number; lng: number; ele: number }[],
+  cumulative: number[],
+  fraction: number,
+): { point: { lat: number; lng: number; ele: number }; distanceKm: number } {
+  const total = cumulative[cumulative.length - 1];
+  const targetDistance = total * fraction;
+  let index = cumulative.findIndex((d) => d >= targetDistance);
+  if (index < 0) index = points.length - 1;
+  return { point: points[index], distanceKm: targetDistance };
+}
+
+/** Dénivelé positif cumulé, en ne comptant que les montées franches. */
+function computeAscent(points: { ele: number }[]): number {
+  let ascent = 0;
+  for (let i = 1; i < points.length; i += 1) {
+    const delta = points[i].ele - points[i - 1].ele;
+    // Seuil de 1 m : sans lui, le bruit du modèle altimétrique s'accumule et
+    // gonfle le dénivelé de plusieurs centaines de mètres sur un parcours plat.
+    if (delta > 1) ascent += delta;
+  }
+  return Math.round(ascent);
+}
+
+/**
+ * Construit une boucle calée sur de vraies routes.
+ *
+ * La géométrie ne sert plus qu'à choisir la FORME de la boucle : quelques
+ * points d'ancrage répartis en cercle autour du départ. C'est le routeur
+ * cyclable qui relie ensuite ces points par des routes existantes.
+ *
+ * En cas d'échec du routage, on retombe sur la boucle purement géométrique,
+ * explicitement marquée comme une estimation — l'écran doit le dire plutôt que
+ * de faire passer un cercle pour un itinéraire.
+ */
+export async function generateLocalLoopRoute(
+  origin: { lat: number; lng: number },
+  cityName: string,
+  targetDistanceKm: number = 35,
+  terrainType: 'plat' | 'vallonne' | 'montagne' | 'urbain_et_campagne' = 'vallonne',
+  bikeType: 'route' | 'gravel' | 'clm' | 'polyvalent' = 'route',
+): Promise<CyclingRoute> {
+  const estimated = buildEstimatedLoopRoute(origin, cityName, targetDistanceKm, terrainType, bikeType);
+
+  // Huit ancrages : assez pour imposer une vraie boucle, assez peu pour que le
+  // routeur garde la liberté de suivre les routes agréables entre deux points.
+  const ANCHOR_COUNT = 8;
+  // Le facteur 0,92 compense l'allongement dû au suivi des routes, qui ne vont
+  // jamais tout droit : sans lui la boucle rendue dépasse largement la cible.
+  const radiusKm = ((targetDistanceKm / (2 * Math.PI)) * 1.15) * 0.92;
+  const kmPerLat = 111.0;
+  const kmPerLng = 111.0 * Math.cos((origin.lat * Math.PI) / 180);
+
+  const anchors: { lat: number; lng: number }[] = [];
+  for (let i = 0; i < ANCHOR_COUNT; i += 1) {
+    const angle = (i / ANCHOR_COUNT) * 2 * Math.PI - Math.PI / 2;
+    anchors.push({
+      lat: origin.lat + (Math.sin(angle) * radiusKm) / kmPerLat,
+      lng: origin.lng + (Math.cos(angle) * radiusKm) / kmPerLng,
+    });
+  }
+  // Départ et arrivée au même endroit : c'est ce qui en fait une boucle.
+  anchors.unshift({ ...origin });
+  anchors.push({ ...origin });
+
+  const routed = await snapToRoads(anchors, bikeType);
+  if (!routed) return estimated;
+
+  const points = routed.points;
+
+  // Distances cumulées, pour placer les repères au bon kilomètre.
+  const cumulative: number[] = [0];
+  for (let i = 1; i < points.length; i += 1) {
+    cumulative.push(
+      cumulative[i - 1] +
+        haversineKm(points[i - 1].lat, points[i - 1].lng, points[i].lat, points[i].lng),
+    );
+  }
+
+  const hasElevation = points.some((p) => p.ele !== 0);
+  const ascent = routed.ascentM ?? (hasElevation ? computeAscent(points) : null);
+
+  const waypoints: RouteWaypoint[] = estimated.waypoints.map((waypoint, index) => {
+    const fraction = index / (estimated.waypoints.length - 1);
+    const { point, distanceKm } = pointAtFraction(points, cumulative, fraction);
+    return {
+      ...waypoint,
+      lat: point.lat,
+      lng: point.lng,
+      elevationM: hasElevation ? point.ele : waypoint.elevationM,
+      distanceFromStartKm: Number(distanceKm.toFixed(1)),
+    };
+  });
+
+  const realDistance = Number(routed.distanceKm.toFixed(1));
+
+  return {
+    ...estimated,
+    name: `Boucle ${Math.round(realDistance)} km autour de ${cityName}`,
+    description:
+      `Parcours calé sur le réseau routier OpenStreetMap au départ de ${cityName}` +
+      `${ascent === null ? ' (dénivelé non disponible pour ce parcours).' : '.'}`,
+    estimatedDistanceKm: realDistance,
+    totalAscentM: ascent ?? 0,
+    waypoints,
+    gpxPoints: points,
+    routeSource: 'roads',
+    elevationSource: ascent === null ? 'unknown' : 'measured',
   };
 }
 

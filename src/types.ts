@@ -83,6 +83,14 @@ export interface CyclingRoute {
   safetyTips: string[];
   isCustom?: boolean;
   surface?: 'asphalte_parfait' | 'mixte_gravel' | 'petites_routes_calmes';
+  /**
+   * D'où vient le tracé. `estimation` signale une boucle géométrique, non
+   * calée sur des routes : l'écran doit le dire au lieu de la présenter comme
+   * un itinéraire praticable.
+   */
+  routeSource?: 'roads' | 'estimation';
+  /** `estimated` = dénivelé calculé par modèle, pas mesuré. */
+  elevationSource?: 'measured' | 'estimated' | 'unknown';
 }
 
 export interface WorkoutBlock {
