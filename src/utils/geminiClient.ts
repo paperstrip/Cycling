@@ -72,28 +72,82 @@ export function isOverloadedError(error: any): boolean {
   );
 }
 
-const RETRY_DELAYS_MS = [1200, 3000, 6500];
+/**
+ * Modèles de texte, du préféré au repli.
+ *
+ * La saturation frappe un modèle en particulier, pas l'API entière : lors d'une
+ * panne observée, `gemini-3.7-flash` renvoyait 503 sur la moindre requête
+ * pendant que les trois suivants répondaient en quelques centaines de
+ * millisecondes. Insister sur le modèle saturé ne pouvait donc rien donner ;
+ * il faut changer de modèle.
+ */
+const TEXT_MODEL_CHAIN = [TEXT_MODEL, 'gemini-3.6-flash', 'gemini-flash-latest'];
+
+/** Même principe pour la synthèse vocale. */
+const TTS_MODEL_CHAIN = [TTS_MODEL, 'gemini-2.5-flash-preview-tts'];
+
+/** Attentes du second passage, quand toute la chaîne est saturée. */
+const RETRY_DELAYS_MS = [1500, 4000];
 
 /**
- * Rejoue un appel Gemini quand le modèle est saturé.
- *
- * Une surcharge dure typiquement quelques secondes. Sans reprise, elle
- * remontait telle quelle jusqu'à l'écran : la personne voyait un échec là où
- * une seconde tentative aurait suffi. Les autres causes — clé absente, quota,
- * réseau — ne sont pas rejouées, réessayer n'y changerait rien.
+ * Dernier modèle ayant répondu, pour ne pas rappeler un modèle mort à chaque
+ * requête. Oublié au bout d'un quart d'heure : une saturation est passagère et
+ * on doit pouvoir revenir au modèle préféré.
  */
-async function withOverloadRetry<T>(call: () => Promise<T>): Promise<T> {
+const PREFERRED_MODEL_TTL_MS = 15 * 60 * 1000;
+let workingModel: { name: string; at: number } | null = null;
+
+function orderedChain(chain: string[]): string[] {
+  if (!workingModel || Date.now() - workingModel.at > PREFERRED_MODEL_TTL_MS) return chain;
+  const known = workingModel.name;
+  if (!chain.includes(known)) return chain;
+  return [known, ...chain.filter((m) => m !== known)];
+}
+
+/**
+ * Appelle Gemini en basculant de modèle sur saturation.
+ *
+ * Premier passage : chaque modèle de la chaîne est essayé une fois, sans
+ * attente — la bascule doit être imperceptible. Si toute la chaîne est
+ * saturée, on repasse avec des délais croissants, car il s'agit alors d'un
+ * incident général et non d'un modèle en particulier.
+ *
+ * Les autres causes — clé absente, quota, réseau — ne sont jamais rejouées :
+ * changer de modèle n'y changerait rien et ferait perdre du temps.
+ */
+async function callWithFallback<T>(
+  chain: string[],
+  call: (model: string) => Promise<T>,
+): Promise<T> {
   let lastError: any;
-  for (let attempt = 0; attempt <= RETRY_DELAYS_MS.length; attempt += 1) {
-    try {
-      return await call();
-    } catch (error) {
-      lastError = error;
-      if (!isOverloadedError(error) || attempt === RETRY_DELAYS_MS.length) throw error;
-      await new Promise((resolve) => setTimeout(resolve, RETRY_DELAYS_MS[attempt]));
+
+  for (let pass = 0; pass <= RETRY_DELAYS_MS.length; pass += 1) {
+    if (pass > 0) {
+      await new Promise((resolve) => setTimeout(resolve, RETRY_DELAYS_MS[pass - 1]));
+    }
+    for (const model of orderedChain(chain)) {
+      try {
+        const result = await call(model);
+        workingModel = { name: model, at: Date.now() };
+        return result;
+      } catch (error) {
+        lastError = error;
+        if (!isOverloadedError(error)) throw error;
+      }
     }
   }
+
   throw lastError;
+}
+
+/** Chaîne texte. */
+function withOverloadRetry<T>(call: (model: string) => Promise<T>): Promise<T> {
+  return callWithFallback(TEXT_MODEL_CHAIN, call);
+}
+
+/** Chaîne synthèse vocale. */
+function withTtsFallback<T>(call: (model: string) => Promise<T>): Promise<T> {
+  return callWithFallback(TTS_MODEL_CHAIN, call);
 }
 
 /* ------------------------------------------------------------------ */
@@ -160,9 +214,9 @@ Les valeurs d'intensité acceptées sont :
       ? `Localisation départ approximative : Lat ${userLocation.lat.toFixed(4)}, Lng ${userLocation.lng.toFixed(4)}.`
       : '';
 
-  const response = await withOverloadRetry(() =>
+  const response = await withOverloadRetry((model) =>
       getClient().models.generateContent({
-      model: TEXT_MODEL,
+      model,
       contents: `Génère une séance cycliste d'élite complète pour : "${prompt}". ${profileContext} ${locationContext}${
         trainingSummary
           ? `\n\nENTRAÎNEMENT RÉELLEMENT EFFECTUÉ — cale la difficulté et le volume dessus, notamment si la charge récente indique une surcharge ou une reprise :\n${trainingSummary}`
@@ -389,9 +443,9 @@ Dans tes échanges :
 
   const prompt = `Contexte :\n${profileContext}\n${programContext}${trainingContext}\n\nHistorique de la discussion :\n${conversationHistory}\n\nDernier message du cycliste, auquel tu dois répondre précisément :\n"${lastCyclistMessage}"\n\nDonne la prochaine réponse du Coach Jean-Marc. Traite d'abord le contenu de ce dernier message avec des éléments chiffrés et concrets, puis, si tu as assez d'éléments, propose une action (séance ciblée ou programme) dont le payloadPrompt reprend les spécificités évoquées.`;
 
-  const response = await withOverloadRetry(() =>
+  const response = await withOverloadRetry((model) =>
       getClient().models.generateContent({
-      model: TEXT_MODEL,
+      model,
       contents: prompt,
       config: {
         systemInstruction: systemInstruction + INCLUSIVE_LANGUAGE_RULE,
@@ -470,9 +524,9 @@ ${
     : ''
 }`;
 
-  const response = await withOverloadRetry(() =>
+  const response = await withOverloadRetry((model) =>
       getClient().models.generateContent({
-      model: TEXT_MODEL,
+      model,
       contents: prompt,
       config: {
         systemInstruction: systemInstruction + INCLUSIVE_LANGUAGE_RULE,
@@ -602,9 +656,9 @@ Donne des waypoints précis, le profil d'élévation, les conseils de braquet/ry
 - Terrain préféré : ${terrainPreference || 'vallonne'}
 - Localisation approximative : Lat ${userLocation?.lat || 48.8566}, Lng ${userLocation?.lng || 2.3522}`;
 
-  const response = await withOverloadRetry(() =>
+  const response = await withOverloadRetry((model) =>
       getClient().models.generateContent({
-      model: TEXT_MODEL,
+      model,
       contents: prompt,
       config: {
         systemInstruction: systemInstruction + INCLUSIVE_LANGUAGE_RULE,
@@ -712,9 +766,9 @@ En tant que Coach d'élite Jean-Marc, rédige un débriefing post-séance constr
 2. Ce que cette séance apporte à la progression d'ensemble, en la situant par rapport aux semaines précédentes.
 3. La consigne concrète pour la suite : récupération immédiate, et surtout ce que devrait être la prochaine séance compte tenu de la charge actuelle.`;
 
-    const response = await withOverloadRetry(() =>
+    const response = await withOverloadRetry((model) =>
         getClient().models.generateContent({
-        model: TEXT_MODEL,
+        model,
         contents: prompt,
         config: {
           systemInstruction:
@@ -768,9 +822,9 @@ export async function generateLiveMotivation(payload: {
 
 Rédige un message audio de coach cycliste en français : 1 à 2 phrases courtes, très énergiques, impactantes et rythmées (maximum 25 mots), adaptées à la situation pour motiver, encourager avec passion ou réguler l'effort. Pas de fioritures, pas de balises.`;
 
-    const response = await withOverloadRetry(() =>
+    const response = await withOverloadRetry((model) =>
         getClient().models.generateContent({
-        model: TEXT_MODEL,
+        model,
         contents: prompt,
         config: {
           systemInstruction:
@@ -875,9 +929,9 @@ ${
 
 Réponds en français, 25 mots maximum pour le commentaire audio.`;
 
-    const response = await withOverloadRetry(() =>
+    const response = await withOverloadRetry((model) =>
         getClient().models.generateContent({
-        model: TEXT_MODEL,
+        model,
         contents: prompt,
         config: {
           systemInstruction:
@@ -963,9 +1017,9 @@ export async function synthesizeSpeech(params: {
   const cached = ttsAudioCache.get(cacheKey);
   if (cached) return cached;
 
-  const response = await withOverloadRetry(() =>
+  const response = await withTtsFallback((model) =>
       getClient().models.generateContent({
-      model: TTS_MODEL,
+      model,
       contents: [{ parts: [{ text: cleanText }] }],
       config: {
         responseModalities: [Modality.AUDIO],
