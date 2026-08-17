@@ -224,6 +224,21 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-stone-950 text-white flex flex-col selection:bg-amber-500 selection:text-stone-950 font-sans">
+      {/* Texture de fond : la vue aérienne de la route, la seule image sans
+          variante puisque personne n'y est reconnaissable. Très effacée et
+          fixe, elle donne de la matière au fond sans concurrencer le contenu.
+          `pointer-events-none` la laisse traversable par les touchers, et le
+          voile par-dessus garantit le contraste du texte quelle que soit la
+          zone de l'image qui tombe derrière. */}
+      <div className="fixed inset-0 z-0 pointer-events-none" aria-hidden="true">
+        <img
+          src={`${import.meta.env.BASE_URL}image/image-6.webp`}
+          alt=""
+          className="w-full h-full object-cover opacity-[0.09]"
+        />
+        <div className="absolute inset-0 bg-stone-950/45" />
+      </div>
+
       {/* Zone haute collante : bandeaux PWA puis en-tête.
           Un seul conteneur collant porte la marge de sécurité de l'encoche —
           deux éléments en sticky top-0 se superposeraient, et un bandeau sans
@@ -313,7 +328,9 @@ export default function App() {
       </div>
 
       {/* Main Body Content Container */}
-      <main className="max-w-7xl mx-auto px-page py-5 sm:py-8 w-full flex-1 pb-nav">
+      {/* `relative z-10` : sans position, le contenu passerait DERRIÈRE la
+          texture, qui est positionnée. */}
+      <main className="relative z-10 max-w-7xl mx-auto px-page py-5 sm:py-8 w-full flex-1 pb-nav">
         {/* Séance interrompue : proposition de reprise */}
         {resumableRide && (
           <div className="mb-5 p-4 rounded-2xl bg-cyan-500/10 border border-cyan-500/30 space-y-3 animate-fade-up">

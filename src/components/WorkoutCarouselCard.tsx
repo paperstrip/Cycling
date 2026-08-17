@@ -35,9 +35,7 @@ export const WorkoutCarouselCard: React.FC<WorkoutCarouselCardProps> = ({
 }) => (
   <button
     onClick={onSelect}
-    className={`relative shrink-0 w-[62%] max-w-[240px] h-[188px] rounded-[26px] overflow-hidden text-left cursor-pointer snap-start transition-shadow ${
-      isSelected ? 'ring-2 ring-amber-500' : ''
-    }`}
+    className="relative shrink-0 w-[62%] max-w-[240px] h-[188px] rounded-[26px] overflow-hidden text-left cursor-pointer snap-start"
   >
     <div className="absolute inset-0 bg-stone-900" />
     <WorkoutPhoto
@@ -52,6 +50,16 @@ export const WorkoutCarouselCard: React.FC<WorkoutCarouselCardProps> = ({
         background: 'linear-gradient(to top, #14161a 30%, rgba(20,22,26,0.75) 58%, rgba(20,22,26,0.15) 100%)',
       }}
     />
+
+    {/* Liseré de sélection dessiné À L'INTÉRIEUR de la carte. En `ring`, il
+        était tracé hors du cadre et le carrousel, qui masque ce qui dépasse,
+        en rognait les bords haut et bas. */}
+    {isSelected && (
+      <div
+        className="absolute inset-0 rounded-[26px] border-2 border-amber-500 pointer-events-none"
+        aria-hidden="true"
+      />
+    )}
 
     <div className="absolute top-3 left-3 flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-stone-950/70 backdrop-blur-sm">
       <Clock className="w-3 h-3 text-amber-400" />
