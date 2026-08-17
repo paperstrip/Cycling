@@ -6,7 +6,9 @@
 import React from 'react';
 import { Play } from 'lucide-react';
 import type { ExecutionStep, IntensityZone } from '../types';
-import { WorkoutArtwork, type ArtworkVariant } from './WorkoutArtwork';
+import type { ArtworkVariant } from './WorkoutArtwork';
+import { WorkoutPhoto } from './WorkoutPhoto';
+import type { IllustrationPreference } from '../types';
 
 interface WorkoutHeroCardProps {
   title: string;
@@ -15,6 +17,7 @@ interface WorkoutHeroCardProps {
   chips: string[];
   eyebrow: string;
   artwork: ArtworkVariant;
+  illustrationPreference?: IllustrationPreference;
   onStart: () => void;
 }
 
@@ -29,22 +32,27 @@ export const WorkoutHeroCard: React.FC<WorkoutHeroCardProps> = ({
   chips,
   eyebrow,
   artwork,
+  illustrationPreference,
   onStart,
 }) => {
   return (
-    <div className="relative rounded-[28px] overflow-hidden bg-stone-900 min-h-[268px] flex flex-col justify-end">
-      {/* Illustration de fond, à la place qu'occuperait une photo. Elle est
-          cantonnée à la moitié haute : son sujet est posé sur sa ligne
-          d'horizon, et le voile de lecture assombrit le bas de la carte. */}
-      <WorkoutArtwork variant={artwork} className="absolute inset-x-0 top-0 w-full h-[62%]" />
+    <div className="relative rounded-[28px] overflow-hidden bg-stone-900 min-h-[300px] flex flex-col justify-end">
+      {/* Photo pleine carte : les sources sont carrées et la carte est presque
+          carrée elle aussi, le recadrage y perd donc très peu. */}
+      <WorkoutPhoto
+        subject={artwork}
+        photoKey={title}
+        preference={illustrationPreference}
+        className="absolute inset-0 w-full h-full"
+      />
 
-      {/* Voile de lecture : le titre doit tenir par-dessus l'illustration. */}
+      {/* Voile de lecture : le titre doit tenir par-dessus la photo. */}
       <div
         className="absolute inset-0"
         aria-hidden="true"
         style={{
           background:
-            'linear-gradient(to top, #1b1d21 42%, rgba(27,29,33,0.42) 78%, rgba(27,29,33,0) 100%)',
+            'linear-gradient(to top, #14161a 26%, rgba(20,22,26,0.82) 52%, rgba(20,22,26,0.25) 100%)',
         }}
       />
 

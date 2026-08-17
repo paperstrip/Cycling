@@ -261,6 +261,43 @@ export const ProfileAndZonesScreen: React.FC<ProfileAndZonesScreenProps> = ({
           Modifier mes paramètres et données physiologiques
         </h3>
 
+        {/* Réglage d'affichage, pas une déclaration d'identité : « Varié » est
+            la valeur par défaut, personne n'a à se ranger dans une case pour
+            que l'app ait des images. */}
+        <div className="text-xs">
+          <label className="block text-stone-300 font-bold mb-1.5">
+            Photos de l'application
+          </label>
+          <div className="flex items-center gap-2">
+            {(
+              [
+                { id: 'varie', label: 'Varié' },
+                { id: 'femme', label: 'Cyclistes femmes' },
+                { id: 'homme', label: 'Cyclistes hommes' },
+              ] as const
+            ).map((option) => {
+              const isActive = (formData.illustrationPreference || 'varie') === option.id;
+              return (
+                <button
+                  key={option.id}
+                  type="button"
+                  onClick={() => handleUpdate({ illustrationPreference: option.id })}
+                  className={`px-3.5 py-2 rounded-xl font-bold cursor-pointer transition-colors ${
+                    isActive
+                      ? 'bg-amber-500 text-stone-950'
+                      : 'bg-stone-950 border border-stone-800 text-stone-400 hover:text-white'
+                  }`}
+                >
+                  {option.label}
+                </button>
+              );
+            })}
+          </div>
+          <p className="text-[11px] text-stone-500 mt-1.5">
+            Par défaut les deux séries alternent. Ce choix ne change que les images.
+          </p>
+        </div>
+
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-xs">
           <div>
             <label className="block text-stone-300 font-bold mb-1.5">Nom ou Pseudo</label>

@@ -6,12 +6,15 @@
 import React from 'react';
 import { Check, Clock } from 'lucide-react';
 import type { WorkoutPlan } from '../types';
-import { WorkoutArtwork, artworkForWorkout } from './WorkoutArtwork';
+import { artworkForWorkout } from './WorkoutArtwork';
+import { WorkoutPhoto } from './WorkoutPhoto';
+import type { IllustrationPreference } from '../types';
 
 interface WorkoutCarouselCardProps {
   plan: WorkoutPlan;
   durationMin: number;
   isSelected: boolean;
+  illustrationPreference?: IllustrationPreference;
   onSelect: () => void;
 }
 
@@ -27,6 +30,7 @@ export const WorkoutCarouselCard: React.FC<WorkoutCarouselCardProps> = ({
   plan,
   durationMin,
   isSelected,
+  illustrationPreference,
   onSelect,
 }) => (
   <button
@@ -36,14 +40,16 @@ export const WorkoutCarouselCard: React.FC<WorkoutCarouselCardProps> = ({
     }`}
   >
     <div className="absolute inset-0 bg-stone-900" />
-    <WorkoutArtwork
-      variant={artworkForWorkout(plan)}
-      className="absolute inset-x-0 top-0 w-full h-[72%]"
+    <WorkoutPhoto
+      subject={artworkForWorkout(plan)}
+      photoKey={plan.nom}
+      preference={illustrationPreference}
+      className="absolute inset-0 w-full h-full"
     />
     <div
       className="absolute inset-0"
       style={{
-        background: 'linear-gradient(to top, #1b1d21 38%, rgba(27,29,33,0.45) 72%, rgba(27,29,33,0) 100%)',
+        background: 'linear-gradient(to top, #14161a 30%, rgba(20,22,26,0.75) 58%, rgba(20,22,26,0.15) 100%)',
       }}
     />
 

@@ -57,6 +57,28 @@ export function isQuotaError(error: any): boolean {
 /* 1. Génération d'une séance à partir d'une description libre         */
 /* ------------------------------------------------------------------ */
 
+/**
+ * Règle de langue appliquée à toutes les prises de parole du coach.
+ *
+ * Le français accorde les adjectifs : sans consigne, le modèle écrit « tu es
+ * motivé », « sois concentré », et s'adresse donc par défaut à un homme. L'app
+ * ne demande son genre à personne — et n'a pas à le demander pour savoir
+ * comment lui parler.
+ */
+const INCLUSIVE_LANGUAGE_RULE = `
+RÈGLE DE LANGUE — Tu ignores le genre de la personne à qui tu parles et tu ne le
+supposes jamais. N'emploie aucun accord genré à son sujet : ni masculin ni
+féminin, et pas d'écriture inclusive à points médians non plus. Reformule.
+- Au lieu de « tu es motivé », écris « tu as de la motivation », « quelle
+  motivation ».
+- Au lieu de « sois concentré », écris « garde la concentration » ou
+  « concentre-toi sur la cadence ».
+- Au lieu de « champion », « coureur », « prêt », emploie le prénom fourni, ou
+  des tournures neutres : « allez », « on y va », « en place ».
+- Les noms de choses gardent leur genre normal : « la séance est prête », « le
+  programme est prêt » restent corrects.
+`;
+
 export async function generateWorkoutPlan(params: {
   prompt: string;
   cyclistProfile?: any;
@@ -98,7 +120,7 @@ Les valeurs d'intensité acceptées sont :
     model: TEXT_MODEL,
     contents: `Génère une séance cycliste d'élite complète pour : "${prompt}". ${profileContext} ${locationContext}`,
     config: {
-      systemInstruction,
+      systemInstruction: systemInstruction + INCLUSIVE_LANGUAGE_RULE,
       responseMimeType: 'application/json',
       responseSchema: {
         type: Type.OBJECT,
@@ -313,7 +335,7 @@ Dans tes échanges :
     model: TEXT_MODEL,
     contents: prompt,
     config: {
-      systemInstruction,
+      systemInstruction: systemInstruction + INCLUSIVE_LANGUAGE_RULE,
       responseMimeType: 'application/json',
       responseSchema: {
         type: Type.OBJECT,
@@ -386,7 +408,7 @@ Chaque semaine doit contenir :
     model: TEXT_MODEL,
     contents: prompt,
     config: {
-      systemInstruction,
+      systemInstruction: systemInstruction + INCLUSIVE_LANGUAGE_RULE,
       responseMimeType: 'application/json',
       responseSchema: {
         type: Type.OBJECT,
@@ -516,7 +538,7 @@ Donne des waypoints précis, le profil d'élévation, les conseils de braquet/ry
     model: TEXT_MODEL,
     contents: prompt,
     config: {
-      systemInstruction,
+      systemInstruction: systemInstruction + INCLUSIVE_LANGUAGE_RULE,
       responseMimeType: 'application/json',
       responseSchema: {
         type: Type.OBJECT,
@@ -619,7 +641,8 @@ En tant que Coach d'élite Jean-Marc, rédige un débriefing post-séance constr
       contents: prompt,
       config: {
         systemInstruction:
-          'Tu es Jean-Marc, entraîneur cycliste professionnel. Ton débriefing doit être motivant, valorisant mais techniquement aiguisé pour faire progresser le coureur.',
+          'Tu es Jean-Marc, entraîneur cycliste professionnel. Ton débriefing doit être motivant, valorisant mais techniquement aiguisé pour faire progresser la personne.' +
+          INCLUSIVE_LANGUAGE_RULE,
       },
     });
 
@@ -654,7 +677,7 @@ export async function generateLiveMotivation(payload: {
 }): Promise<string> {
   try {
     const prompt = `Données télémétriques actuelles du cycliste :
-- Coureur : ${payload.cyclistName || 'Champion'} (Niveau: ${payload.cyclistLevel || 'intermédiaire'})
+- Coureur : ${payload.cyclistName || 'la personne'} (Niveau: ${payload.cyclistLevel || 'intermédiaire'})
 - Étape : ${payload.stepNumber || 1} sur ${payload.totalSteps || 1} (${payload.blockName || 'Bloc en cours'})
 - Type de bloc : ${payload.blockType || 'effort'}
 - Intensité requise : ${payload.targetIntensity || 'a_fond'}
@@ -672,7 +695,8 @@ Rédige un message audio de coach cycliste en français : 1 à 2 phrases courtes
       contents: prompt,
       config: {
         systemInstruction:
-          "Tu es Jean-Marc, coach cycliste d'élite dans l'oreillette d'un coureur en plein effort. Sois direct, dynamique, bienveillant mais exigeant. Donne des conseils précis (posture, cadence, régularité, respiration ventrale, relance en danseuse, gainage).",
+          "Tu es Jean-Marc, coach cycliste d'élite dans l'oreillette d'une personne en plein effort. Sois direct, dynamique, bienveillant mais exigeant. Donne des conseils précis (posture, cadence, régularité, respiration ventrale, relance en danseuse, gainage)." +
+          INCLUSIVE_LANGUAGE_RULE,
         temperature: 0.85,
       },
     });
@@ -751,7 +775,7 @@ export async function analyzeLiveRide(input: LiveAnalysisInput): Promise<LiveAna
     };
 
     const prompt = `Situation actuelle du cycliste :
-- Coureur : ${input.cyclistName || 'Champion'} (niveau ${input.cyclistLevel || 'intermédiaire'})
+- Coureur : ${input.cyclistName || 'la personne'} (niveau ${input.cyclistLevel || 'intermédiaire'})
 - Bloc ${input.stepNumber}/${input.totalSteps} : "${input.blockName}" (type ${input.blockType}, intensité demandée ${input.targetIntensity})
 - Écoulé dans le bloc : ${Math.round(input.stepElapsedSec)}s, restant : ${Math.round(input.stepRemainingSec)}s
 - Temps total : ${Math.floor(input.totalElapsedSec / 60)} min, distance ${input.totalDistanceKm.toFixed(1)} km
@@ -776,7 +800,8 @@ Réponds en français, 25 mots maximum pour le commentaire audio.`;
       contents: prompt,
       config: {
         systemInstruction:
-          "Tu es Jean-Marc, directeur sportif dans l'oreillette d'un cycliste en plein effort. Tu analyses des données réelles et tu corriges l'allure avec précision : cadence, posture, respiration, gestion de l'effort. Direct, exigeant, jamais bavard. Si l'écart à la cible est important, la correction passe avant l'encouragement.",
+          "Tu es Jean-Marc, directeur sportif dans l'oreillette d'une personne en plein effort. Tu analyses des données réelles et tu corriges l'allure avec précision : cadence, posture, respiration, gestion de l'effort. Direct, exigeant, jamais bavard. Si l'écart à la cible est important, la correction passe avant l'encouragement." +
+          INCLUSIVE_LANGUAGE_RULE,
         temperature: 0.8,
         responseMimeType: 'application/json',
         responseSchema: {

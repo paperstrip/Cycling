@@ -5,7 +5,8 @@ import { flattenWorkoutPlan, formatSecondsToMinutes } from '../utils/planFlatten
 import { getAllRideRecords } from '../utils/storage';
 import { WorkoutProfileBar } from './WorkoutProfileBar';
 import { WorkoutHeroCard } from './WorkoutHeroCard';
-import { WorkoutArtwork, artworkForWorkout } from './WorkoutArtwork';
+import { artworkForWorkout } from './WorkoutArtwork';
+import { WorkoutPhoto } from './WorkoutPhoto';
 import { WorkoutCarouselCard } from './WorkoutCarouselCard';
 import { ScreenTitle } from './ScreenTitle';
 import { ProgressRing } from './ProgressRing';
@@ -103,8 +104,8 @@ export const WorkoutSelector: React.FC<WorkoutSelectorProps> = ({
       <section className="space-y-4">
         <ScreenTitle
           eyebrow={`${greeting}, ${firstName}`}
-          title="Prêt à"
-          accent="rouler ?"
+          title="On roule"
+          accent="aujourd'hui ?"
         />
         <WeekStrip rideDates={rides.map((r) => r.date)} />
       </section>
@@ -116,6 +117,7 @@ export const WorkoutSelector: React.FC<WorkoutSelectorProps> = ({
         <WorkoutHeroCard
           eyebrow="Séance du jour"
           artwork={artworkForWorkout(selectedPlan)}
+          illustrationPreference={cyclistProfile.illustrationPreference}
           title={selectedPlan.nom}
           goal={selectedPlan.objectif}
           chips={[
@@ -230,14 +232,14 @@ export const WorkoutSelector: React.FC<WorkoutSelectorProps> = ({
             label: 'Parcours',
             sub: 'Itinéraires & GPS',
             icon: Compass,
-            art: 'route' as const,
+            photo: 'parcours' as const,
             onClick: onOpenRoutesTab,
           },
           {
             label: 'Profil',
             sub: 'Zones & calibrage',
             icon: SlidersHorizontal,
-            art: 'chrono' as const,
+            photo: 'coach' as const,
             onClick: onOpenProfileTab,
           },
         ].map((tile) => {
@@ -248,9 +250,11 @@ export const WorkoutSelector: React.FC<WorkoutSelectorProps> = ({
               onClick={tile.onClick}
               className="relative overflow-hidden p-4 pt-14 rounded-3xl bg-stone-900 border border-stone-800 hover:border-stone-700 text-left cursor-pointer transition-colors"
             >
-              <WorkoutArtwork
-                variant={tile.art}
-                className="absolute inset-x-0 top-0 w-full h-24 opacity-60"
+              <WorkoutPhoto
+                subject={tile.photo}
+                photoKey={tile.label}
+                preference={cyclistProfile.illustrationPreference}
+                className="absolute inset-x-0 top-0 w-full h-24 opacity-70"
               />
               <div
                 className="absolute inset-0"
@@ -309,6 +313,7 @@ export const WorkoutSelector: React.FC<WorkoutSelectorProps> = ({
                 plan={preset}
                 durationMin={Math.round(steps.reduce((a, s) => a + s.durationSec, 0) / 60)}
                 isSelected={selectedPlan.nom === preset.nom}
+                illustrationPreference={cyclistProfile.illustrationPreference}
                 onSelect={() => onSelectPlan(preset)}
               />
             );

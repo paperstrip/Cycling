@@ -41,7 +41,18 @@ export interface CyclistProfile {
   heartRateZones?: HeartRateZones;
   strengths?: string;
   weaknesses?: string;
+  /**
+   * Qui l'on voit sur les photos de l'app.
+   *
+   * Par défaut « varie » : les deux séries alternent. Ce n'est pas une case à
+   * cocher sur l'identité de la personne — on ne lui demande pas de se ranger
+   * dans une catégorie pour avoir des images — mais un réglage d'affichage,
+   * qu'elle peut fixer si elle préfère ne voir qu'une seule série.
+   */
+  illustrationPreference?: IllustrationPreference;
 }
+
+export type IllustrationPreference = 'varie' | 'femme' | 'homme';
 
 export interface RouteWaypoint {
   name: string;
