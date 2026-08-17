@@ -18,6 +18,7 @@ import { VoiceSettingsModal } from './components/VoiceSettingsModal';
 import { OnboardingModal } from './components/OnboardingModal';
 import { ApiKeyModal } from './components/ApiKeyModal';
 import { BottomNav, NAV_ITEMS } from './components/BottomNav';
+import { markSessionCompleted } from './utils/programProgress';
 import { RidePreparationModal } from './components/RidePreparationModal';
 import {
   clearActiveRide,
@@ -177,6 +178,16 @@ export default function App() {
     setLastCompletedRide(ride);
     setIsLiveRideActive(false);
     setResumingRide(null);
+
+    // Rattache la sortie au programme. Sans cela `isCompleted` n'était jamais
+    // écrit et le tableau de bord affichait 0 séance réalisée indéfiniment.
+    if (activeProgram) {
+      const updated = markSessionCompleted(activeProgram, ride);
+      if (updated) {
+        setActiveProgram(updated);
+        saveStoredActiveProgram(updated);
+      }
+    }
   };
 
   const handleCancelRide = () => {

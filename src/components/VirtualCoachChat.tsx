@@ -6,6 +6,7 @@ import {
   generateWorkoutPlan,
   isOverloadedError,
 } from '../utils/geminiClient';
+import { loadTrainingSummary } from '../utils/trainingContext';
 import {
   Sparkles,
   Send,
@@ -134,10 +135,16 @@ export const VirtualCoachChat: React.FC<VirtualCoachChatProps> = ({
     setIsLoading(true);
 
     try {
+      // Le coach ne voyait que le profil déclaré : il ne pouvait donc rien dire
+      // de ce qui a été réellement fait. Le bilan est recalculé à chaque
+      // message, pour qu'une sortie enregistrée entre-temps compte.
+      const trainingSummary = await loadTrainingSummary(cyclistProfile);
+
       const data = await chatWithCoach({
         messages: newMessages,
         cyclistProfile,
         currentProgram,
+        trainingSummary,
       });
 
       const coachMsg: ChatMessage = {
@@ -167,11 +174,14 @@ export const VirtualCoachChat: React.FC<VirtualCoachChatProps> = ({
   const handleExecuteAction = async (action: NonNullable<ChatMessage['suggestedAction']>) => {
     setIsGeneratingAction(true);
     try {
+      const trainingSummary = await loadTrainingSummary(cyclistProfile);
+
       if (action.type === 'generate_program') {
         const program: TrainingProgram = await generateTrainingProgram({
           cyclistProfile,
           goalDetails: action.payload?.payloadPrompt || cyclistProfile.goalDescription,
           durationWeeks: 4,
+          trainingSummary,
         });
         onProgramGenerated(program);
 
@@ -189,6 +199,7 @@ export const VirtualCoachChat: React.FC<VirtualCoachChatProps> = ({
         const plan: WorkoutPlan = await generateWorkoutPlan({
           prompt: promptToUse,
           cyclistProfile,
+          trainingSummary,
         });
         onSelectGeneratedPlan(plan);
       }

@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { RideRecord, StepExecutionRecord, CyclistProfile } from '../types';
 import { saveRideRecord, exportRideToGPX } from '../utils/storage';
 import { generateRideDebrief } from '../utils/geminiClient';
+import { loadTrainingSummary } from '../utils/trainingContext';
 import { formatTimeDisplay, formatTimeHoursDisplay, formatSecondsToMinutes } from '../utils/planFlatten';
 import { RouteViewer } from './RouteViewer';
 import {
@@ -58,9 +59,14 @@ export const SummaryScreen: React.FC<SummaryScreenProps> = ({
       if (coachDebrief) return;
       setIsLoadingDebrief(true);
       try {
+        // Le débriefing commentait la séance isolément. Avec le bilan, il peut
+        // la situer dans les semaines précédentes et adapter la consigne de
+        // suite à la charge en cours.
+        const trainingSummary = await loadTrainingSummary(cyclistProfile);
         const debrief = await generateRideDebrief({
           rideRecord: ride,
           cyclistProfile,
+          trainingSummary,
         });
         setCoachDebrief(debrief);
       } catch (err) {

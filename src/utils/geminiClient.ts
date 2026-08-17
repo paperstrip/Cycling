@@ -126,8 +126,9 @@ export async function generateWorkoutPlan(params: {
   prompt: string;
   cyclistProfile?: any;
   userLocation?: { lat: number; lng: number } | null;
+  trainingSummary?: string;
 }): Promise<any> {
-  const { prompt, cyclistProfile, userLocation } = params;
+  const { prompt, cyclistProfile, userLocation, trainingSummary } = params;
   if (!prompt || typeof prompt !== 'string') {
     throw new Error('Le champ prompt est requis');
   }
@@ -162,7 +163,11 @@ Les valeurs d'intensité acceptées sont :
   const response = await withOverloadRetry(() =>
       getClient().models.generateContent({
       model: TEXT_MODEL,
-      contents: `Génère une séance cycliste d'élite complète pour : "${prompt}". ${profileContext} ${locationContext}`,
+      contents: `Génère une séance cycliste d'élite complète pour : "${prompt}". ${profileContext} ${locationContext}${
+        trainingSummary
+          ? `\n\nENTRAÎNEMENT RÉELLEMENT EFFECTUÉ — cale la difficulté et le volume dessus, notamment si la charge récente indique une surcharge ou une reprise :\n${trainingSummary}`
+          : ''
+      }`,
       config: {
         systemInstruction: systemInstruction + INCLUSIVE_LANGUAGE_RULE,
         responseMimeType: 'application/json',
@@ -341,8 +346,10 @@ export async function chatWithCoach(params: {
   messages: any[];
   cyclistProfile?: any;
   currentProgram?: any;
+  /** Bilan d'entraînement rédigé, produit par `summarizeForCoach`. */
+  trainingSummary?: string;
 }): Promise<{ coachReply: string; suggestedAction?: any }> {
-  const { messages, cyclistProfile, currentProgram } = params;
+  const { messages, cyclistProfile, currentProgram, trainingSummary } = params;
   if (!messages || !Array.isArray(messages)) {
     throw new Error('Historique de messages requis');
   }
@@ -354,7 +361,9 @@ Tu t'adresses aussi bien à un débutant qui veut préparer sa première cyclo d
 Dans tes échanges :
 - RÉPONDS D'ABORD À CE QUI EST DEMANDÉ. Si le cycliste décrit sa situation (poids, gabarit, objectif, niveau de ses partenaires, allure visée), analyse-la concrètement avant toute autre chose : ce qu'elle implique physiologiquement, ce qui est réaliste, et par quoi commencer. Ne réponds jamais par une formule d'attente générique.
 - Exploite chaque information donnée. Un poids, une vitesse cible, un contexte de sortie sont des données d'entraînement : sers-t'en pour chiffrer (watts/kg nécessaires, écart à combler, durée de progression réaliste).
-- Ne repose pas une question dont la réponse figure déjà dans la conversation ou dans le profil.
+- Ne repose pas une question dont la réponse figure déjà dans la conversation, dans le profil ou dans le bilan d'entraînement fourni.
+- APPUIE-TOI SUR LE BILAN D'ENTRAÎNEMENT. Il décrit ce qui a été réellement fait, pas ce qui a été déclaré. Cite-en les chiffres quand ils éclairent ta réponse : volume des dernières semaines, régularité, blocs tenus dans l'allure, évolution par zone. Si le bilan signale une surcharge, propose d'alléger avant toute autre chose ; s'il signale une reprise après coupure, reconstruis progressivement au lieu d'enchaîner de l'intensité.
+- N'invente jamais une donnée absente du bilan. S'il indique qu'une mesure n'est pas encore fiable, dis-le simplement plutôt que de conclure.
 - Dès que tu disposes d'assez d'éléments, propose une action concrète via suggestedAction : une séance ciblée ou un programme complet, avec un payloadPrompt détaillé reprenant les spécificités évoquées (gabarit, objectif chiffré, contraintes horaires).
 - Félicite chaleureusement les réussites et donne des encouragements puissants et professionnels.
 - Reste toujours dans ton rôle d'entraîneur de vélo passionné, constructif et motivant. Réponds en français clair, précis et dynamique.`;
@@ -374,7 +383,11 @@ Dans tes échanges :
   const lastCyclistMessage =
     [...messages].reverse().find((m: any) => m.sender === 'cyclist')?.text || '';
 
-  const prompt = `Contexte :\n${profileContext}\n${programContext}\n\nHistorique de la discussion :\n${conversationHistory}\n\nDernier message du cycliste, auquel tu dois répondre précisément :\n"${lastCyclistMessage}"\n\nDonne la prochaine réponse du Coach Jean-Marc. Traite d'abord le contenu de ce dernier message avec des éléments chiffrés et concrets, puis, si tu as assez d'éléments, propose une action (séance ciblée ou programme) dont le payloadPrompt reprend les spécificités évoquées.`;
+  const trainingContext = trainingSummary
+    ? `\n\nENTRAÎNEMENT RÉELLEMENT EFFECTUÉ (données de l'app, pas des déclarations) :\n${trainingSummary}`
+    : '';
+
+  const prompt = `Contexte :\n${profileContext}\n${programContext}${trainingContext}\n\nHistorique de la discussion :\n${conversationHistory}\n\nDernier message du cycliste, auquel tu dois répondre précisément :\n"${lastCyclistMessage}"\n\nDonne la prochaine réponse du Coach Jean-Marc. Traite d'abord le contenu de ce dernier message avec des éléments chiffrés et concrets, puis, si tu as assez d'éléments, propose une action (séance ciblée ou programme) dont le payloadPrompt reprend les spécificités évoquées.`;
 
   const response = await withOverloadRetry(() =>
       getClient().models.generateContent({
@@ -427,8 +440,9 @@ export async function generateTrainingProgram(params: {
   cyclistProfile?: any;
   goalDetails?: string;
   durationWeeks?: number;
+  trainingSummary?: string;
 }): Promise<any> {
-  const { cyclistProfile, goalDetails, durationWeeks = 4 } = params;
+  const { cyclistProfile, goalDetails, durationWeeks = 4, trainingSummary } = params;
 
   const systemInstruction = `Tu es un maître entraîneur cycliste créant un programme d'entraînement complet, progressif et structuré sur plusieurs semaines.
 Applique les principes physiologiques fondamentaux :
@@ -449,7 +463,12 @@ Chaque semaine doit contenir :
 - Une séance d'endurance fondamentale (Z2)
 - Une ou deux séances d'intervalles spécifiques (VO2max, Sweetspot, Fartlek ou PMA selon la phase)
 - Des jours de repos ou de récupération active (moulinage très souple Z1)
-- Une sortie longue le week-end`;
+- Une sortie longue le week-end
+${
+  trainingSummary
+    ? `\nPOINT DE DÉPART RÉEL — construis la première semaine à partir du volume réellement tenu ces dernières semaines, pas d'un idéal théorique. Une progression de charge hebdomadaire supérieure à 10 % par rapport à ce volume est à proscrire.\n${trainingSummary}`
+    : ''
+}`;
 
   const response = await withOverloadRetry(() =>
       getClient().models.generateContent({
@@ -661,8 +680,9 @@ const FALLBACK_DEBRIEF =
 export async function generateRideDebrief(params: {
   rideRecord?: any;
   cyclistProfile?: any;
+  trainingSummary?: string;
 }): Promise<string> {
-  const { rideRecord, cyclistProfile } = params;
+  const { rideRecord, cyclistProfile, trainingSummary } = params;
 
   try {
     const prompt = `Analyse cette sortie cycliste terminée :
@@ -681,11 +701,16 @@ ${rideRecord?.steps
   .join('\n')}
 
 Profil coureur : Niveau=${cyclistProfile?.level || 'intermediaire'}, Objectif=${cyclistProfile?.primaryGoal || 'Progression'}.
+${
+  trainingSummary
+    ? `\nSITUATION D'ENSEMBLE — replace cette séance dans les semaines précédentes plutôt que de la commenter isolément :\n${trainingSummary}`
+    : ''
+}
 
 En tant que Coach d'élite Jean-Marc, rédige un débriefing post-séance constructif et motivant en 3 parties :
-1. Les points forts et le respect des cibles physiologiques.
-2. Les axes d'amélioration technique/gestion d'effort.
-3. Le conseil de récupération immédiat (nutrition de récupération, étirements/sommeil, prochaine séance).`;
+1. Ce qui a été tenu ou non par rapport aux cibles, avec les écarts chiffrés bloc par bloc.
+2. Ce que cette séance apporte à la progression d'ensemble, en la situant par rapport aux semaines précédentes.
+3. La consigne concrète pour la suite : récupération immédiate, et surtout ce que devrait être la prochaine séance compte tenu de la charge actuelle.`;
 
     const response = await withOverloadRetry(() =>
         getClient().models.generateContent({
