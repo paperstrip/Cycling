@@ -1,6 +1,11 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { ChatMessage, CyclistProfile, TrainingProgram, WorkoutPlan } from '../types';
-import { chatWithCoach, generateTrainingProgram, generateWorkoutPlan } from '../utils/geminiClient';
+import {
+  chatWithCoach,
+  generateTrainingProgram,
+  generateWorkoutPlan,
+  isOverloadedError,
+} from '../utils/geminiClient';
 import {
   Sparkles,
   Send,
@@ -68,6 +73,50 @@ export const VirtualCoachChat: React.FC<VirtualCoachChatProps> = ({
     scrollToBottom();
   }, [messages, isLoading]);
 
+  /**
+   * Traduit un échec technique en cause lisible.
+   *
+   * Une phrase générique présentée comme une réponse du coach masquait l'échec
+   * réel : on croyait être ignoré. Chaque cause mène à une action différente,
+   * la distinguer est donc utile et pas seulement cosmétique.
+   */
+  const explainFailure = (e: any): string => {
+    const raw = e?.message || String(e || '');
+    if (raw.includes('clé API') || raw.includes('API key') || raw.includes('API_KEY')) {
+      return "Aucune clé IA n'est configurée. Ajoutez-la via l'icône 🔑 en haut de l'écran pour que le coach puisse répondre.";
+    }
+    if (raw.includes('429') || raw.includes('RESOURCE_EXHAUSTED') || raw.includes('quota')) {
+      return 'Quota IA atteint. Réessayez dans quelques minutes : le coach répondra à nouveau.';
+    }
+    if (isOverloadedError(e)) {
+      // Le message brut de Google est en anglais et enrobé de JSON : inutile de
+      // l'infliger. La reprise automatique a déjà échoué quatre fois ici.
+      return "Les serveurs de Google sont saturés en ce moment. J'ai déjà réessayé plusieurs fois sans succès — renvoyez votre message dans une minute, ça repartira. Votre clé et votre quota ne sont pas en cause.";
+    }
+    if (raw.includes('403') || raw.includes('401') || raw.includes('PERMISSION')) {
+      return "La clé IA a été refusée. Vérifiez-la via l'icône 🔑 en haut de l'écran.";
+    }
+    if (raw.includes('fetch') || raw.includes('network')) {
+      return 'Pas de connexion : le coach a besoin du réseau pour répondre.';
+    }
+    // Message technique conservé, mais débarrassé de son enrobage JSON.
+    const readable = (raw.match(/"message"\s*:\s*"([^"]+)"/)?.[1] || raw).slice(0, 180);
+    return `Le coach n'a pas pu répondre. ${readable}`;
+  };
+
+  const pushError = (e: any) => {
+    setMessages((prev) => [
+      ...prev,
+      {
+        id: 'err-' + Date.now(),
+        sender: 'coach',
+        text: explainFailure(e),
+        timestamp: Date.now(),
+        isError: true,
+      },
+    ]);
+  };
+
   const handleSendMessage = async (customText?: string) => {
     const textToSend = customText || inputVal.trim();
     if (!textToSend || isLoading) return;
@@ -109,34 +158,7 @@ export const VirtualCoachChat: React.FC<VirtualCoachChatProps> = ({
     } catch (e: any) {
       console.error(e);
 
-      // Une phrase générique présentée comme une réponse du coach masquait
-      // l'échec réel : l'utilisateur croyait être ignoré. On affiche la cause.
-      const raw = e?.message || String(e || '');
-      let explanation: string;
-      if (raw.includes('clé API') || raw.includes('API key') || raw.includes('API_KEY')) {
-        explanation =
-          "Aucune clé IA n'est configurée. Ajoutez-la via l'icône 🔑 en haut de l'écran pour que le coach puisse répondre.";
-      } else if (raw.includes('429') || raw.includes('RESOURCE_EXHAUSTED') || raw.includes('quota')) {
-        explanation =
-          'Quota IA atteint. Réessayez dans quelques minutes : le coach répondra à nouveau.';
-      } else if (raw.includes('403') || raw.includes('401') || raw.includes('PERMISSION')) {
-        explanation = 'La clé IA a été refusée. Vérifiez-la via l\'icône 🔑 en haut de l\'écran.';
-      } else if (raw.includes('fetch') || raw.includes('network')) {
-        explanation = 'Pas de connexion : le coach a besoin du réseau pour répondre.';
-      } else {
-        explanation = `Le coach n'a pas pu répondre. ${raw.slice(0, 160)}`;
-      }
-
-      setMessages((prev) => [
-        ...prev,
-        {
-          id: 'err-' + Date.now(),
-          sender: 'coach',
-          text: explanation,
-          timestamp: Date.now(),
-          isError: true,
-        },
-      ]);
+      pushError(e);
     } finally {
       setIsLoading(false);
     }
@@ -172,7 +194,9 @@ export const VirtualCoachChat: React.FC<VirtualCoachChatProps> = ({
       }
     } catch (err) {
       console.error(err);
-      alert('Erreur lors de la création. Veuillez réessayer.');
+      // Une `alert()` sortait de la conversation et n'apprenait rien : la cause
+      // s'affiche désormais dans le fil, au même endroit que le reste.
+      pushError(err);
     } finally {
       setIsGeneratingAction(false);
     }

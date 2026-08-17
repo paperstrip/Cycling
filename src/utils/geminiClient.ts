@@ -53,6 +53,49 @@ export function isQuotaError(error: any): boolean {
   );
 }
 
+/**
+ * Détecte une surcharge passagère côté Gemini (503 / UNAVAILABLE).
+ *
+ * À distinguer nettement du quota : ici la clé est valide et rien n'est
+ * épuisé, le modèle est simplement saturé à cet instant. Réessayer a du sens,
+ * alors que sur un quota il faut attendre.
+ */
+export function isOverloadedError(error: any): boolean {
+  const asText =
+    typeof error === 'string' ? error : error?.message || JSON.stringify(error) || '';
+  return (
+    error?.status === 503 ||
+    asText.includes('503') ||
+    asText.includes('UNAVAILABLE') ||
+    asText.includes('overloaded') ||
+    asText.includes('high demand')
+  );
+}
+
+const RETRY_DELAYS_MS = [1200, 3000, 6500];
+
+/**
+ * Rejoue un appel Gemini quand le modèle est saturé.
+ *
+ * Une surcharge dure typiquement quelques secondes. Sans reprise, elle
+ * remontait telle quelle jusqu'à l'écran : la personne voyait un échec là où
+ * une seconde tentative aurait suffi. Les autres causes — clé absente, quota,
+ * réseau — ne sont pas rejouées, réessayer n'y changerait rien.
+ */
+async function withOverloadRetry<T>(call: () => Promise<T>): Promise<T> {
+  let lastError: any;
+  for (let attempt = 0; attempt <= RETRY_DELAYS_MS.length; attempt += 1) {
+    try {
+      return await call();
+    } catch (error) {
+      lastError = error;
+      if (!isOverloadedError(error) || attempt === RETRY_DELAYS_MS.length) throw error;
+      await new Promise((resolve) => setTimeout(resolve, RETRY_DELAYS_MS[attempt]));
+    }
+  }
+  throw lastError;
+}
+
 /* ------------------------------------------------------------------ */
 /* 1. Génération d'une séance à partir d'une description libre         */
 /* ------------------------------------------------------------------ */
@@ -116,170 +159,172 @@ Les valeurs d'intensité acceptées sont :
       ? `Localisation départ approximative : Lat ${userLocation.lat.toFixed(4)}, Lng ${userLocation.lng.toFixed(4)}.`
       : '';
 
-  const response = await getClient().models.generateContent({
-    model: TEXT_MODEL,
-    contents: `Génère une séance cycliste d'élite complète pour : "${prompt}". ${profileContext} ${locationContext}`,
-    config: {
-      systemInstruction: systemInstruction + INCLUSIVE_LANGUAGE_RULE,
-      responseMimeType: 'application/json',
-      responseSchema: {
-        type: Type.OBJECT,
-        properties: {
-          nom: {
-            type: Type.STRING,
-            description:
-              "Titre court et professionnel (ex: VO2max 5x(2'/2') en Faux-Plat, Sweetspot 3x10min Haute Cadence)",
-          },
-          description: {
-            type: Type.STRING,
-            description: 'Explication physiologique claire des bénéfices et adaptations visées',
-          },
-          objectif: {
-            type: Type.STRING,
-            description:
-              'Objectif clé (ex: Développement de la puissance aérobie maximale & tolérance lactique)',
-          },
-          difficultyRating: {
-            type: Type.INTEGER,
-            description: "Niveau d'exigence physique de 1 (très facile) à 5 (extrême)",
-          },
-          targetTSS: {
-            type: Type.INTEGER,
-            description: "Estimation de la charge d'entraînement Training Stress Score (ex: 65)",
-          },
-          coachTips: {
-            type: Type.ARRAY,
-            items: { type: Type.STRING },
-            description:
-              "3 à 4 conseils d'experts sur l'hydratation, la cadence, la posture et la respiration",
-          },
-          blocs: {
-            type: Type.ARRAY,
-            description: "Liste chronologique des blocs d'entraînement",
-            items: {
-              type: Type.OBJECT,
-              properties: {
-                type: {
-                  type: Type.STRING,
-                  description: "Type de bloc : 'echauffement', 'effort', 'recup', ou 'retour_calme'",
-                },
-                duree_sec: {
-                  type: Type.INTEGER,
-                  description: 'Durée en secondes de la phase principale',
-                },
-                cible: {
-                  type: Type.STRING,
-                  description: "Intensité cible : 'facile', 'moyen', 'seuil', 'a_fond'",
-                },
-                repetitions: {
-                  type: Type.INTEGER,
-                  description: 'Nombre de répétitions (optionnel)',
-                },
-                recup_sec: {
-                  type: Type.INTEGER,
-                  description:
-                    'Durée en secondes de la récupération entre répétitions (optionnel)',
-                },
-                recup_cible: {
-                  type: Type.STRING,
-                  description: "Intensité de la récupération (ex: 'facile')",
-                },
-                consigne_vocale: {
-                  type: Type.STRING,
-                  description: 'Instruction courte (<15 mots) et motivante prononcée au départ du bloc',
-                },
-                cadence_recommandee: {
-                  type: Type.STRING,
-                  description: "Plage de cadence conseillée (ex: '90-95 rpm')",
-                },
-                focus_technique: {
-                  type: Type.STRING,
-                  description:
-                    "Point technique (ex: 'Buste stable, mains aux cocottes, épaules relâchées')",
-                },
-              },
-              required: ['type', 'duree_sec', 'cible', 'consigne_vocale'],
+  const response = await withOverloadRetry(() =>
+      getClient().models.generateContent({
+      model: TEXT_MODEL,
+      contents: `Génère une séance cycliste d'élite complète pour : "${prompt}". ${profileContext} ${locationContext}`,
+      config: {
+        systemInstruction: systemInstruction + INCLUSIVE_LANGUAGE_RULE,
+        responseMimeType: 'application/json',
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            nom: {
+              type: Type.STRING,
+              description:
+                "Titre court et professionnel (ex: VO2max 5x(2'/2') en Faux-Plat, Sweetspot 3x10min Haute Cadence)",
             },
-          },
-          routeSuggestion: {
-            type: Type.OBJECT,
-            description: 'Itinéraire suggéré et adapté à la séance',
-            properties: {
-              id: { type: Type.STRING },
-              name: {
-                type: Type.STRING,
-                description: 'Nom évocateur du parcours (ex: Circuit des Coteaux & Faux-Plats)',
-              },
-              description: {
-                type: Type.STRING,
-                description: 'Description du profil topo et des conditions idéales',
-              },
-              estimatedDistanceKm: { type: Type.NUMBER, description: 'Distance totale estimée en km' },
-              totalAscentM: { type: Type.NUMBER, description: 'Dénivelé positif estimé en mètres' },
-              terrainType: {
-                type: Type.STRING,
-                description: "'plat' | 'vallonne' | 'montagne' | 'urbain_et_campagne'",
-              },
-              recommendedBikeType: {
-                type: Type.STRING,
-                description: "'route' | 'gravel' | 'clm' | 'polyvalent'",
-              },
-              idealForWorkout: {
-                type: Type.STRING,
-                description: 'Pourquoi ce type de profil convient exactement aux blocs',
-              },
-              pacingStrategy: {
-                type: Type.STRING,
-                description:
-                  'Conseil de gestion de parcours (ex: Garder du braquet dans les descentes, placer les séries dans la montée)',
-              },
-              safetyTips: {
-                type: Type.ARRAY,
-                items: { type: Type.STRING },
-                description: '2 à 3 consignes de sécurité (visibilité, priorités, carrefours)',
-              },
-              waypoints: {
-                type: Type.ARRAY,
-                items: {
-                  type: Type.OBJECT,
-                  properties: {
-                    name: { type: Type.STRING },
-                    elevationM: { type: Type.NUMBER },
-                    distanceFromStartKm: { type: Type.NUMBER },
-                    instruction: { type: Type.STRING },
-                    segmentType: {
-                      type: Type.STRING,
-                      description:
-                        "'plat' | 'faux_plat_montant' | 'cote_raide' | 'descente' | 'ligne_droite_roulante'",
-                    },
-                    pacingAdvice: { type: Type.STRING },
+            description: {
+              type: Type.STRING,
+              description: 'Explication physiologique claire des bénéfices et adaptations visées',
+            },
+            objectif: {
+              type: Type.STRING,
+              description:
+                'Objectif clé (ex: Développement de la puissance aérobie maximale & tolérance lactique)',
+            },
+            difficultyRating: {
+              type: Type.INTEGER,
+              description: "Niveau d'exigence physique de 1 (très facile) à 5 (extrême)",
+            },
+            targetTSS: {
+              type: Type.INTEGER,
+              description: "Estimation de la charge d'entraînement Training Stress Score (ex: 65)",
+            },
+            coachTips: {
+              type: Type.ARRAY,
+              items: { type: Type.STRING },
+              description:
+                "3 à 4 conseils d'experts sur l'hydratation, la cadence, la posture et la respiration",
+            },
+            blocs: {
+              type: Type.ARRAY,
+              description: "Liste chronologique des blocs d'entraînement",
+              items: {
+                type: Type.OBJECT,
+                properties: {
+                  type: {
+                    type: Type.STRING,
+                    description: "Type de bloc : 'echauffement', 'effort', 'recup', ou 'retour_calme'",
                   },
-                  required: [
-                    'name',
-                    'elevationM',
-                    'distanceFromStartKm',
-                    'instruction',
-                    'segmentType',
-                  ],
+                  duree_sec: {
+                    type: Type.INTEGER,
+                    description: 'Durée en secondes de la phase principale',
+                  },
+                  cible: {
+                    type: Type.STRING,
+                    description: "Intensité cible : 'facile', 'moyen', 'seuil', 'a_fond'",
+                  },
+                  repetitions: {
+                    type: Type.INTEGER,
+                    description: 'Nombre de répétitions (optionnel)',
+                  },
+                  recup_sec: {
+                    type: Type.INTEGER,
+                    description:
+                      'Durée en secondes de la récupération entre répétitions (optionnel)',
+                  },
+                  recup_cible: {
+                    type: Type.STRING,
+                    description: "Intensité de la récupération (ex: 'facile')",
+                  },
+                  consigne_vocale: {
+                    type: Type.STRING,
+                    description: 'Instruction courte (<15 mots) et motivante prononcée au départ du bloc',
+                  },
+                  cadence_recommandee: {
+                    type: Type.STRING,
+                    description: "Plage de cadence conseillée (ex: '90-95 rpm')",
+                  },
+                  focus_technique: {
+                    type: Type.STRING,
+                    description:
+                      "Point technique (ex: 'Buste stable, mains aux cocottes, épaules relâchées')",
+                  },
                 },
+                required: ['type', 'duree_sec', 'cible', 'consigne_vocale'],
               },
             },
-            required: [
-              'name',
-              'description',
-              'estimatedDistanceKm',
-              'totalAscentM',
-              'terrainType',
-              'idealForWorkout',
-              'pacingStrategy',
-              'waypoints',
-            ],
+            routeSuggestion: {
+              type: Type.OBJECT,
+              description: 'Itinéraire suggéré et adapté à la séance',
+              properties: {
+                id: { type: Type.STRING },
+                name: {
+                  type: Type.STRING,
+                  description: 'Nom évocateur du parcours (ex: Circuit des Coteaux & Faux-Plats)',
+                },
+                description: {
+                  type: Type.STRING,
+                  description: 'Description du profil topo et des conditions idéales',
+                },
+                estimatedDistanceKm: { type: Type.NUMBER, description: 'Distance totale estimée en km' },
+                totalAscentM: { type: Type.NUMBER, description: 'Dénivelé positif estimé en mètres' },
+                terrainType: {
+                  type: Type.STRING,
+                  description: "'plat' | 'vallonne' | 'montagne' | 'urbain_et_campagne'",
+                },
+                recommendedBikeType: {
+                  type: Type.STRING,
+                  description: "'route' | 'gravel' | 'clm' | 'polyvalent'",
+                },
+                idealForWorkout: {
+                  type: Type.STRING,
+                  description: 'Pourquoi ce type de profil convient exactement aux blocs',
+                },
+                pacingStrategy: {
+                  type: Type.STRING,
+                  description:
+                    'Conseil de gestion de parcours (ex: Garder du braquet dans les descentes, placer les séries dans la montée)',
+                },
+                safetyTips: {
+                  type: Type.ARRAY,
+                  items: { type: Type.STRING },
+                  description: '2 à 3 consignes de sécurité (visibilité, priorités, carrefours)',
+                },
+                waypoints: {
+                  type: Type.ARRAY,
+                  items: {
+                    type: Type.OBJECT,
+                    properties: {
+                      name: { type: Type.STRING },
+                      elevationM: { type: Type.NUMBER },
+                      distanceFromStartKm: { type: Type.NUMBER },
+                      instruction: { type: Type.STRING },
+                      segmentType: {
+                        type: Type.STRING,
+                        description:
+                          "'plat' | 'faux_plat_montant' | 'cote_raide' | 'descente' | 'ligne_droite_roulante'",
+                      },
+                      pacingAdvice: { type: Type.STRING },
+                    },
+                    required: [
+                      'name',
+                      'elevationM',
+                      'distanceFromStartKm',
+                      'instruction',
+                      'segmentType',
+                    ],
+                  },
+                },
+              },
+              required: [
+                'name',
+                'description',
+                'estimatedDistanceKm',
+                'totalAscentM',
+                'terrainType',
+                'idealForWorkout',
+                'pacingStrategy',
+                'waypoints',
+              ],
+            },
           },
+          required: ['nom', 'description', 'objectif', 'blocs', 'coachTips', 'routeSuggestion'],
         },
-        required: ['nom', 'description', 'objectif', 'blocs', 'coachTips', 'routeSuggestion'],
       },
-    },
-  });
+      }),
+    );
 
   const parsed = parseJson<any>(response.text);
   if (parsed.routeSuggestion && !parsed.routeSuggestion.id) {
@@ -331,43 +376,45 @@ Dans tes échanges :
 
   const prompt = `Contexte :\n${profileContext}\n${programContext}\n\nHistorique de la discussion :\n${conversationHistory}\n\nDernier message du cycliste, auquel tu dois répondre précisément :\n"${lastCyclistMessage}"\n\nDonne la prochaine réponse du Coach Jean-Marc. Traite d'abord le contenu de ce dernier message avec des éléments chiffrés et concrets, puis, si tu as assez d'éléments, propose une action (séance ciblée ou programme) dont le payloadPrompt reprend les spécificités évoquées.`;
 
-  const response = await getClient().models.generateContent({
-    model: TEXT_MODEL,
-    contents: prompt,
-    config: {
-      systemInstruction: systemInstruction + INCLUSIVE_LANGUAGE_RULE,
-      responseMimeType: 'application/json',
-      responseSchema: {
-        type: Type.OBJECT,
-        properties: {
-          coachReply: {
-            type: Type.STRING,
-            description: "Le texte de réponse de l'entraîneur (chaleureux, professionnel, structuré)",
-          },
-          suggestedAction: {
-            type: Type.OBJECT,
-            properties: {
-              type: {
-                type: Type.STRING,
-                description: "'generate_program' | 'generate_plan' | 'suggest_route' | 'start_workout'",
-              },
-              label: {
-                type: Type.STRING,
-                description:
-                  "Texte du bouton d'action suggéré (ex: 'Créer mon programme sur 4 semaines', 'Générer la séance Seuil')",
-              },
-              payloadPrompt: {
-                type: Type.STRING,
-                description:
-                  "Prompt détaillé prêt à l'emploi pour lancer la génération, reprenant explicitement les spécificités du cycliste évoquées dans la conversation (gabarit, poids, objectif chiffré, allure visée, contraintes horaires)",
+  const response = await withOverloadRetry(() =>
+      getClient().models.generateContent({
+      model: TEXT_MODEL,
+      contents: prompt,
+      config: {
+        systemInstruction: systemInstruction + INCLUSIVE_LANGUAGE_RULE,
+        responseMimeType: 'application/json',
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            coachReply: {
+              type: Type.STRING,
+              description: "Le texte de réponse de l'entraîneur (chaleureux, professionnel, structuré)",
+            },
+            suggestedAction: {
+              type: Type.OBJECT,
+              properties: {
+                type: {
+                  type: Type.STRING,
+                  description: "'generate_program' | 'generate_plan' | 'suggest_route' | 'start_workout'",
+                },
+                label: {
+                  type: Type.STRING,
+                  description:
+                    "Texte du bouton d'action suggéré (ex: 'Créer mon programme sur 4 semaines', 'Générer la séance Seuil')",
+                },
+                payloadPrompt: {
+                  type: Type.STRING,
+                  description:
+                    "Prompt détaillé prêt à l'emploi pour lancer la génération, reprenant explicitement les spécificités du cycliste évoquées dans la conversation (gabarit, poids, objectif chiffré, allure visée, contraintes horaires)",
+                },
               },
             },
           },
+          required: ['coachReply'],
         },
-        required: ['coachReply'],
       },
-    },
-  });
+      }),
+    );
 
   return parseJson(response.text);
 }
@@ -404,96 +451,98 @@ Chaque semaine doit contenir :
 - Des jours de repos ou de récupération active (moulinage très souple Z1)
 - Une sortie longue le week-end`;
 
-  const response = await getClient().models.generateContent({
-    model: TEXT_MODEL,
-    contents: prompt,
-    config: {
-      systemInstruction: systemInstruction + INCLUSIVE_LANGUAGE_RULE,
-      responseMimeType: 'application/json',
-      responseSchema: {
-        type: Type.OBJECT,
-        properties: {
-          title: {
-            type: Type.STRING,
-            description:
-              'Nom percutant du programme (ex: Programme Objectif 100km & Puissance FTP - 4 Semaines)',
-          },
-          overview: {
-            type: Type.STRING,
-            description: "Présentation de la stratégie d'entraînement et des paliers de progression",
-          },
-          durationWeeks: { type: Type.INTEGER },
-          targetGoal: { type: Type.STRING },
-          cyclistLevel: { type: Type.STRING },
-          weeklyVolumeHours: { type: Type.NUMBER },
-          pedagogicalAdvice: {
-            type: Type.ARRAY,
-            items: { type: Type.STRING },
-            description:
-              "5 conseils clés d'entraînement professionnel (sommeil, nutrition glucidique, respect des allures lentes Z2, affûtage, régularité)",
-          },
-          workouts: {
-            type: Type.ARRAY,
-            description:
-              'Liste chronologique des séances du programme (ex: 28 séances pour 4 semaines, 7 jours par semaine)',
-            items: {
-              type: Type.OBJECT,
-              properties: {
-                dayNumber: { type: Type.INTEGER, description: 'Numéro de jour (1, 2, 3...)' },
-                dayOfWeek: {
-                  type: Type.STRING,
-                  description: 'Lundi, Mardi, Mercredi, Jeudi, Vendredi, Samedi, Dimanche',
-                },
-                title: {
-                  type: Type.STRING,
-                  description:
-                    'Titre de la séance (ex: Intervalles PMA 30/30, Sortie Longue Endurance, Repos Complet)',
-                },
-                type: {
-                  type: Type.STRING,
-                  description: "'velo' | 'recup_active' | 'repos' | 'renfo_core'",
-                },
-                targetDurationMinutes: {
-                  type: Type.INTEGER,
-                  description: 'Durée totale estimée en minutes',
-                },
-                notes: { type: Type.STRING, description: "Consignes de l'entraîneur pour cette journée" },
-                workoutPlan: {
-                  type: Type.OBJECT,
-                  description: "Plan détaillé si c'est une séance sur le vélo",
-                  properties: {
-                    nom: { type: Type.STRING },
-                    description: { type: Type.STRING },
-                    objectif: { type: Type.STRING },
-                    blocs: {
-                      type: Type.ARRAY,
-                      items: {
-                        type: Type.OBJECT,
-                        properties: {
-                          type: { type: Type.STRING },
-                          duree_sec: { type: Type.INTEGER },
-                          cible: { type: Type.STRING },
-                          repetitions: { type: Type.INTEGER },
-                          recup_sec: { type: Type.INTEGER },
-                          recup_cible: { type: Type.STRING },
-                          consigne_vocale: { type: Type.STRING },
-                          cadence_recommandee: { type: Type.STRING },
+  const response = await withOverloadRetry(() =>
+      getClient().models.generateContent({
+      model: TEXT_MODEL,
+      contents: prompt,
+      config: {
+        systemInstruction: systemInstruction + INCLUSIVE_LANGUAGE_RULE,
+        responseMimeType: 'application/json',
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            title: {
+              type: Type.STRING,
+              description:
+                'Nom percutant du programme (ex: Programme Objectif 100km & Puissance FTP - 4 Semaines)',
+            },
+            overview: {
+              type: Type.STRING,
+              description: "Présentation de la stratégie d'entraînement et des paliers de progression",
+            },
+            durationWeeks: { type: Type.INTEGER },
+            targetGoal: { type: Type.STRING },
+            cyclistLevel: { type: Type.STRING },
+            weeklyVolumeHours: { type: Type.NUMBER },
+            pedagogicalAdvice: {
+              type: Type.ARRAY,
+              items: { type: Type.STRING },
+              description:
+                "5 conseils clés d'entraînement professionnel (sommeil, nutrition glucidique, respect des allures lentes Z2, affûtage, régularité)",
+            },
+            workouts: {
+              type: Type.ARRAY,
+              description:
+                'Liste chronologique des séances du programme (ex: 28 séances pour 4 semaines, 7 jours par semaine)',
+              items: {
+                type: Type.OBJECT,
+                properties: {
+                  dayNumber: { type: Type.INTEGER, description: 'Numéro de jour (1, 2, 3...)' },
+                  dayOfWeek: {
+                    type: Type.STRING,
+                    description: 'Lundi, Mardi, Mercredi, Jeudi, Vendredi, Samedi, Dimanche',
+                  },
+                  title: {
+                    type: Type.STRING,
+                    description:
+                      'Titre de la séance (ex: Intervalles PMA 30/30, Sortie Longue Endurance, Repos Complet)',
+                  },
+                  type: {
+                    type: Type.STRING,
+                    description: "'velo' | 'recup_active' | 'repos' | 'renfo_core'",
+                  },
+                  targetDurationMinutes: {
+                    type: Type.INTEGER,
+                    description: 'Durée totale estimée en minutes',
+                  },
+                  notes: { type: Type.STRING, description: "Consignes de l'entraîneur pour cette journée" },
+                  workoutPlan: {
+                    type: Type.OBJECT,
+                    description: "Plan détaillé si c'est une séance sur le vélo",
+                    properties: {
+                      nom: { type: Type.STRING },
+                      description: { type: Type.STRING },
+                      objectif: { type: Type.STRING },
+                      blocs: {
+                        type: Type.ARRAY,
+                        items: {
+                          type: Type.OBJECT,
+                          properties: {
+                            type: { type: Type.STRING },
+                            duree_sec: { type: Type.INTEGER },
+                            cible: { type: Type.STRING },
+                            repetitions: { type: Type.INTEGER },
+                            recup_sec: { type: Type.INTEGER },
+                            recup_cible: { type: Type.STRING },
+                            consigne_vocale: { type: Type.STRING },
+                            cadence_recommandee: { type: Type.STRING },
+                          },
+                          required: ['type', 'duree_sec', 'cible', 'consigne_vocale'],
                         },
-                        required: ['type', 'duree_sec', 'cible', 'consigne_vocale'],
                       },
                     },
+                    required: ['nom', 'description', 'objectif', 'blocs'],
                   },
-                  required: ['nom', 'description', 'objectif', 'blocs'],
                 },
+                required: ['dayNumber', 'dayOfWeek', 'title', 'type', 'targetDurationMinutes', 'notes'],
               },
-              required: ['dayNumber', 'dayOfWeek', 'title', 'type', 'targetDurationMinutes', 'notes'],
             },
           },
+          required: ['title', 'overview', 'durationWeeks', 'targetGoal', 'pedagogicalAdvice', 'workouts'],
         },
-        required: ['title', 'overview', 'durationWeeks', 'targetGoal', 'pedagogicalAdvice', 'workouts'],
       },
-    },
-  });
+      }),
+    );
 
   const parsed = parseJson<any>(response.text);
   parsed.id = 'program-' + Date.now();
@@ -534,66 +583,68 @@ Donne des waypoints précis, le profil d'élévation, les conseils de braquet/ry
 - Terrain préféré : ${terrainPreference || 'vallonne'}
 - Localisation approximative : Lat ${userLocation?.lat || 48.8566}, Lng ${userLocation?.lng || 2.3522}`;
 
-  const response = await getClient().models.generateContent({
-    model: TEXT_MODEL,
-    contents: prompt,
-    config: {
-      systemInstruction: systemInstruction + INCLUSIVE_LANGUAGE_RULE,
-      responseMimeType: 'application/json',
-      responseSchema: {
-        type: Type.OBJECT,
-        properties: {
-          name: {
-            type: Type.STRING,
-            description: 'Nom du parcours (ex: Boucle des Plateaux & Faux-Plats du Sud)',
-          },
-          description: { type: Type.STRING, description: 'Description complète du tracé' },
-          estimatedDistanceKm: { type: Type.NUMBER },
-          totalAscentM: { type: Type.NUMBER },
-          terrainType: { type: Type.STRING },
-          recommendedBikeType: { type: Type.STRING },
-          idealForWorkout: {
-            type: Type.STRING,
-            description: 'Pourquoi ce parcours est parfait pour les intervalles prévus',
-          },
-          pacingStrategy: {
-            type: Type.STRING,
-            description: "Comment gérer son braquet, son allure et son effort sur chaque secteur",
-          },
-          safetyTips: {
-            type: Type.ARRAY,
-            items: { type: Type.STRING },
-          },
-          waypoints: {
-            type: Type.ARRAY,
-            items: {
-              type: Type.OBJECT,
-              properties: {
-                name: { type: Type.STRING },
-                elevationM: { type: Type.NUMBER },
-                distanceFromStartKm: { type: Type.NUMBER },
-                instruction: { type: Type.STRING },
-                segmentType: { type: Type.STRING },
-                pacingAdvice: { type: Type.STRING },
+  const response = await withOverloadRetry(() =>
+      getClient().models.generateContent({
+      model: TEXT_MODEL,
+      contents: prompt,
+      config: {
+        systemInstruction: systemInstruction + INCLUSIVE_LANGUAGE_RULE,
+        responseMimeType: 'application/json',
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            name: {
+              type: Type.STRING,
+              description: 'Nom du parcours (ex: Boucle des Plateaux & Faux-Plats du Sud)',
+            },
+            description: { type: Type.STRING, description: 'Description complète du tracé' },
+            estimatedDistanceKm: { type: Type.NUMBER },
+            totalAscentM: { type: Type.NUMBER },
+            terrainType: { type: Type.STRING },
+            recommendedBikeType: { type: Type.STRING },
+            idealForWorkout: {
+              type: Type.STRING,
+              description: 'Pourquoi ce parcours est parfait pour les intervalles prévus',
+            },
+            pacingStrategy: {
+              type: Type.STRING,
+              description: "Comment gérer son braquet, son allure et son effort sur chaque secteur",
+            },
+            safetyTips: {
+              type: Type.ARRAY,
+              items: { type: Type.STRING },
+            },
+            waypoints: {
+              type: Type.ARRAY,
+              items: {
+                type: Type.OBJECT,
+                properties: {
+                  name: { type: Type.STRING },
+                  elevationM: { type: Type.NUMBER },
+                  distanceFromStartKm: { type: Type.NUMBER },
+                  instruction: { type: Type.STRING },
+                  segmentType: { type: Type.STRING },
+                  pacingAdvice: { type: Type.STRING },
+                },
+                required: ['name', 'elevationM', 'distanceFromStartKm', 'instruction', 'segmentType'],
               },
-              required: ['name', 'elevationM', 'distanceFromStartKm', 'instruction', 'segmentType'],
             },
           },
+          required: [
+            'name',
+            'description',
+            'estimatedDistanceKm',
+            'totalAscentM',
+            'terrainType',
+            'idealForWorkout',
+            'pacingStrategy',
+            'waypoints',
+            'safetyTips',
+          ],
         },
-        required: [
-          'name',
-          'description',
-          'estimatedDistanceKm',
-          'totalAscentM',
-          'terrainType',
-          'idealForWorkout',
-          'pacingStrategy',
-          'waypoints',
-          'safetyTips',
-        ],
       },
-    },
-  });
+      }),
+    );
 
   const parsed = parseJson<any>(response.text);
   parsed.id = 'route-' + Date.now();
@@ -636,15 +687,17 @@ En tant que Coach d'élite Jean-Marc, rédige un débriefing post-séance constr
 2. Les axes d'amélioration technique/gestion d'effort.
 3. Le conseil de récupération immédiat (nutrition de récupération, étirements/sommeil, prochaine séance).`;
 
-    const response = await getClient().models.generateContent({
-      model: TEXT_MODEL,
-      contents: prompt,
-      config: {
-        systemInstruction:
-          'Tu es Jean-Marc, entraîneur cycliste professionnel. Ton débriefing doit être motivant, valorisant mais techniquement aiguisé pour faire progresser la personne.' +
-          INCLUSIVE_LANGUAGE_RULE,
-      },
-    });
+    const response = await withOverloadRetry(() =>
+        getClient().models.generateContent({
+        model: TEXT_MODEL,
+        contents: prompt,
+        config: {
+          systemInstruction:
+            'Tu es Jean-Marc, entraîneur cycliste professionnel. Ton débriefing doit être motivant, valorisant mais techniquement aiguisé pour faire progresser la personne.' +
+            INCLUSIVE_LANGUAGE_RULE,
+        },
+        }),
+      );
 
     return response.text || FALLBACK_DEBRIEF;
   } catch (error) {
@@ -690,16 +743,18 @@ export async function generateLiveMotivation(payload: {
 
 Rédige un message audio de coach cycliste en français : 1 à 2 phrases courtes, très énergiques, impactantes et rythmées (maximum 25 mots), adaptées à la situation pour motiver, encourager avec passion ou réguler l'effort. Pas de fioritures, pas de balises.`;
 
-    const response = await getClient().models.generateContent({
-      model: TEXT_MODEL,
-      contents: prompt,
-      config: {
-        systemInstruction:
-          "Tu es Jean-Marc, coach cycliste d'élite dans l'oreillette d'une personne en plein effort. Sois direct, dynamique, bienveillant mais exigeant. Donne des conseils précis (posture, cadence, régularité, respiration ventrale, relance en danseuse, gainage)." +
-          INCLUSIVE_LANGUAGE_RULE,
-        temperature: 0.85,
-      },
-    });
+    const response = await withOverloadRetry(() =>
+        getClient().models.generateContent({
+        model: TEXT_MODEL,
+        contents: prompt,
+        config: {
+          systemInstruction:
+            "Tu es Jean-Marc, coach cycliste d'élite dans l'oreillette d'une personne en plein effort. Sois direct, dynamique, bienveillant mais exigeant. Donne des conseils précis (posture, cadence, régularité, respiration ventrale, relance en danseuse, gainage)." +
+            INCLUSIVE_LANGUAGE_RULE,
+          temperature: 0.85,
+        },
+        }),
+      );
 
     return (response.text || '').trim().replace(/^["']|["']$/g, '') || FALLBACK_MOTIVATION;
   } catch (error) {
@@ -795,39 +850,41 @@ ${
 
 Réponds en français, 25 mots maximum pour le commentaire audio.`;
 
-    const response = await getClient().models.generateContent({
-      model: TEXT_MODEL,
-      contents: prompt,
-      config: {
-        systemInstruction:
-          "Tu es Jean-Marc, directeur sportif dans l'oreillette d'une personne en plein effort. Tu analyses des données réelles et tu corriges l'allure avec précision : cadence, posture, respiration, gestion de l'effort. Direct, exigeant, jamais bavard. Si l'écart à la cible est important, la correction passe avant l'encouragement." +
-          INCLUSIVE_LANGUAGE_RULE,
-        temperature: 0.8,
-        responseMimeType: 'application/json',
-        responseSchema: {
-          type: Type.OBJECT,
-          properties: {
-            comment: {
-              type: Type.STRING,
-              description: 'Phrase prononcée dans l\'oreillette, 25 mots maximum, percutante',
+    const response = await withOverloadRetry(() =>
+        getClient().models.generateContent({
+        model: TEXT_MODEL,
+        contents: prompt,
+        config: {
+          systemInstruction:
+            "Tu es Jean-Marc, directeur sportif dans l'oreillette d'une personne en plein effort. Tu analyses des données réelles et tu corriges l'allure avec précision : cadence, posture, respiration, gestion de l'effort. Direct, exigeant, jamais bavard. Si l'écart à la cible est important, la correction passe avant l'encouragement." +
+            INCLUSIVE_LANGUAGE_RULE,
+          temperature: 0.8,
+          responseMimeType: 'application/json',
+          responseSchema: {
+            type: Type.OBJECT,
+            properties: {
+              comment: {
+                type: Type.STRING,
+                description: 'Phrase prononcée dans l\'oreillette, 25 mots maximum, percutante',
+              },
+              action: {
+                type: Type.STRING,
+                description: "Consigne d'allure : 'accelerer', 'maintenir', 'reduire' ou 'recuperer'",
+              },
+              focus: {
+                type: Type.STRING,
+                description: 'Point technique très bref affiché à l\'écran (moins de 8 mots)',
+              },
+              urgence: {
+                type: Type.INTEGER,
+                description: '1 = information, 2 = ajustement, 3 = correction urgente',
+              },
             },
-            action: {
-              type: Type.STRING,
-              description: "Consigne d'allure : 'accelerer', 'maintenir', 'reduire' ou 'recuperer'",
-            },
-            focus: {
-              type: Type.STRING,
-              description: 'Point technique très bref affiché à l\'écran (moins de 8 mots)',
-            },
-            urgence: {
-              type: Type.INTEGER,
-              description: '1 = information, 2 = ajustement, 3 = correction urgente',
-            },
+            required: ['comment', 'action', 'focus', 'urgence'],
           },
-          required: ['comment', 'action', 'focus', 'urgence'],
         },
-      },
-    });
+        }),
+      );
 
     const parsed = parseJson<LiveAnalysisResult>(response.text);
     if (!parsed.comment) return FALLBACK_ANALYSIS;
@@ -881,18 +938,20 @@ export async function synthesizeSpeech(params: {
   const cached = ttsAudioCache.get(cacheKey);
   if (cached) return cached;
 
-  const response = await getClient().models.generateContent({
-    model: TTS_MODEL,
-    contents: [{ parts: [{ text: cleanText }] }],
-    config: {
-      responseModalities: [Modality.AUDIO],
-      speechConfig: {
-        voiceConfig: {
-          prebuiltVoiceConfig: { voiceName },
+  const response = await withOverloadRetry(() =>
+      getClient().models.generateContent({
+      model: TTS_MODEL,
+      contents: [{ parts: [{ text: cleanText }] }],
+      config: {
+        responseModalities: [Modality.AUDIO],
+        speechConfig: {
+          voiceConfig: {
+            prebuiltVoiceConfig: { voiceName },
+          },
         },
       },
-    },
-  });
+      }),
+    );
 
   let audioData: string | undefined;
   let mimeType = 'audio/pcm;rate=24000';
