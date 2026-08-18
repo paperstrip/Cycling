@@ -75,30 +75,39 @@ export function isOverloadedError(error: any): boolean {
 /**
  * Chaînes de modèles, par usage.
  *
- * Mesures faites sur une vraie requête de coaching, avec le bilan
- * d'entraînement complet en contexte :
- *   gemini-3.1-flash-lite ....  2,7 s
- *   gemini-flash-lite-latest .  2,8 s
- *   gemini-3.7-flash .........  8,1 s (et fréquemment 503)
- *   gemini-2.5-flash .........  13,2 s
- *   gemini-3.6-flash .........  45,8 s
+ * Latences mesurées sur une vraie requête de coaching, bilan d'entraînement
+ * complet en contexte, avec une clé réelle :
+ *   gemini-flash-lite-latest ..  1,6 s
+ *   gemini-3.5-flash-lite .....  2,4 s
+ *   gemini-3.1-flash-lite .....  2,5 s
+ *   gemini-3.7-flash ..........  8,1 s (et fréquemment 503)
+ *   gemini-2.5-flash .......... 13,2 s
+ *   gemini-3.6-flash .......... 45,8 s
  *
- * D'où deux chaînes distinctes. La conversation part sur les modèles légers :
- * une réponse de coach n'exige pas de raisonnement profond, et vingt secondes
- * d'attente rendent l'échange pénible. La génération structurée — séance,
- * programme, itinéraire — garde en tête le modèle le plus capable, parce qu'elle
- * doit respecter un schéma JSON détaillé et que la qualité prime sur la seconde
- * gagnée.
+ * CONVERSATION — que des modèles « lite », les plus économiques et les plus
+ * rapides. Une réponse de coach n'exige pas de raisonnement profond, et cette
+ * chaîne sert aussi aux consignes dites pendant l'effort, où toute seconde
+ * d'attente s'entend dans l'oreillette. Vérifié : le lite cite correctement les
+ * chiffres du bilan et respecte la règle de langue non genrée.
  *
- * `gemini-3.6-flash` est écarté des deux : 45 s est inutilisable, et c'est lui
- * que la chaîne précédente mémorisait après une panne de 3.7 — d'où la lenteur
- * constatée.
+ * `gemini-2.5-flash-lite` n'est pas retenu bien qu'il apparaisse dans la liste
+ * des modèles : il renvoie 404 pour toute clé récente, Google renvoyant
+ * explicitement vers `gemini-3.5-flash-lite`.
+ *
+ * GÉNÉRATION STRUCTURÉE — séance, programme, itinéraire. Le modèle le plus
+ * capable en tête : ces appels doivent respecter un schéma JSON détaillé, et
+ * un modèle léger y produit des séances plus pauvres. La qualité prime sur les
+ * secondes gagnées, d'autant que ces générations sont rares.
+ *
+ * `gemini-3.6-flash` est écarté des deux : 46 s est inutilisable.
  */
 const CHAT_MODEL_CHAIN = [
+  'gemini-3.5-flash-lite',
   'gemini-3.1-flash-lite',
+  // Alias : utile en dernier filet, mais jamais en tête — la cible peut
+  // changer sous nos pieds sans que rien ne le signale.
   'gemini-flash-lite-latest',
   'gemini-2.5-flash',
-  TEXT_MODEL,
 ];
 
 const STRUCTURED_MODEL_CHAIN = [TEXT_MODEL, 'gemini-2.5-flash', 'gemini-3.1-flash-lite'];
