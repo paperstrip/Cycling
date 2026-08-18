@@ -161,6 +161,8 @@ export interface ChatMessage {
     payload?: any;
     label: string;
   };
+  /** Séance créée par ce message, conservée pour pouvoir la planifier ensuite. */
+  scheduleCandidate?: WorkoutPlan;
 }
 
 export interface ExecutionStep {

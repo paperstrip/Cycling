@@ -12,7 +12,7 @@
  * sautée. Ce module rattache les sorties au calendrier du programme.
  */
 
-import type { RideRecord, ScheduledWorkout, TrainingProgram } from '../types';
+import type { RideRecord, ScheduledWorkout, TrainingProgram, WorkoutPlan } from '../types';
 
 const DAY_MS = 24 * 3600 * 1000;
 
@@ -125,5 +125,79 @@ export function markSessionCompleted(
     workouts: program.workouts.map((w) =>
       w.id === match!.id ? { ...w, isCompleted: true } : w,
     ),
+  };
+}
+
+/**
+ * Insère une séance dans le programme, à une date donnée.
+ *
+ * Une séance générée par le coach ne pouvait pas être planifiée : elle restait
+ * hors du calendrier, donc invisible du tableau de bord et jamais comptée dans
+ * la progression.
+ *
+ * Si une séance est déjà prévue ce jour-là, elle est remplacée — un jour porte
+ * une séance, pas une pile. Un jour de repos est écrasé sans état d'âme : c'est
+ * un choix délibéré de la personne.
+ */
+export function scheduleWorkoutOnDate(
+  program: TrainingProgram,
+  plan: WorkoutPlan,
+  date: Date,
+): TrainingProgram {
+  const start = new Date(program.createdAt);
+  start.setHours(0, 0, 0, 0);
+  const target = new Date(date);
+  target.setHours(0, 0, 0, 0);
+
+  const dayNumber = Math.round((target.getTime() - start.getTime()) / DAY_MS) + 1;
+  const durationMinutes = Math.round(
+    (plan.blocs || []).reduce(
+      (total, block) =>
+        total + (block.duree_sec + (block.recup_sec || 0)) * (block.repetitions || 1),
+      0,
+    ) / 60,
+  );
+
+  const entry: ScheduledWorkout = {
+    id: `sched-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+    dayNumber,
+    dayOfWeek: target.toLocaleDateString('fr-FR', { weekday: 'long' }),
+    title: plan.nom,
+    type: 'velo',
+    targetDurationMinutes: durationMinutes,
+    workoutPlan: plan,
+    notes: plan.objectif || '',
+    isCompleted: false,
+  };
+
+  const withoutThatDay = (program.workouts || []).filter((w) => w.dayNumber !== dayNumber);
+
+  return {
+    ...program,
+    // Le programme doit couvrir la date choisie, sinon la séance serait
+    // planifiée au-delà de son horizon et n'apparaîtrait sur aucune semaine.
+    durationWeeks: Math.max(program.durationWeeks, Math.ceil(dayNumber / 7)),
+    workouts: [...withoutThatDay, entry].sort((a, b) => a.dayNumber - b.dayNumber),
+  };
+}
+
+/**
+ * Programme minimal, créé à la volée pour accueillir une première séance
+ * planifiée alors qu'aucun programme n'existe encore.
+ */
+export function createAdHocProgram(level: TrainingProgram['cyclistLevel']): TrainingProgram {
+  const start = new Date();
+  start.setHours(0, 0, 0, 0);
+  return {
+    id: `prog-${Date.now()}`,
+    title: 'Mon planning',
+    overview: "Planning constitué au fil des séances que vous programmez vous-même.",
+    durationWeeks: 4,
+    targetGoal: 'Progression',
+    cyclistLevel: level,
+    weeklyVolumeHours: 6,
+    pedagogicalAdvice: [],
+    workouts: [],
+    createdAt: start.toISOString(),
   };
 }

@@ -293,7 +293,10 @@ Les valeurs d'intensité acceptées sont :
                 properties: {
                   type: {
                     type: Type.STRING,
-                    description: "Type de bloc : 'echauffement', 'effort', 'recup', ou 'retour_calme'",
+                    // Énumération et non description : un bloc renvoyé avec
+                    // un type hors liste rendait la séance inexécutable.
+                    enum: ['echauffement', 'effort', 'recup', 'retour_calme'],
+                    description: 'Type de bloc',
                   },
                   duree_sec: {
                     type: Type.INTEGER,
@@ -301,7 +304,11 @@ Les valeurs d'intensité acceptées sont :
                   },
                   cible: {
                     type: Type.STRING,
-                    description: "Intensité cible : 'facile', 'moyen', 'seuil', 'a_fond'",
+                    // Sans énumération, certains modèles renvoyaient ce
+                    // champ vide : la séance n'avait alors plus d'intensité
+                    // cible et ne pouvait pas être pilotée.
+                    enum: ['facile', 'moyen', 'seuil', 'a_fond'],
+                    description: 'Intensité cible du bloc',
                   },
                   repetitions: {
                     type: Type.INTEGER,

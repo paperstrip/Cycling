@@ -34,7 +34,10 @@ interface VirtualCoachChatProps {
   onOpenProfileSettings: () => void;
   onOpenRoutesTab?: () => void;
   onGoToWorkouts?: () => void;
+  onScheduleWorkout?: (plan: WorkoutPlan, date: Date) => void;
 }
+
+const CHAT_STORAGE_KEY = 'cyclocoach_coach_chat_v1';
 
 export const VirtualCoachChat: React.FC<VirtualCoachChatProps> = ({
   cyclistProfile,
@@ -44,6 +47,7 @@ export const VirtualCoachChat: React.FC<VirtualCoachChatProps> = ({
   onOpenProfileSettings,
   onOpenRoutesTab,
   onGoToWorkouts,
+  onScheduleWorkout,
 }) => {
   const [messages, setMessages] = useState<ChatMessage[]>([
     {
@@ -65,6 +69,32 @@ export const VirtualCoachChat: React.FC<VirtualCoachChatProps> = ({
     },
   ]);
 
+  // La conversation vivait uniquement dans l'état du composant : changer
+  // d'onglet la démontait et effaçait tout, y compris la séance qui venait
+  // d'être créée.
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(CHAT_STORAGE_KEY);
+      if (!raw) return;
+      const saved = JSON.parse(raw);
+      if (Array.isArray(saved) && saved.length > 0) setMessages(saved);
+    } catch {
+      /* Historique illisible : on repart de l'accueil du coach. */
+    }
+  }, []);
+
+  useEffect(() => {
+    try {
+      // Les derniers échanges suffisent : au-delà, on remplit le stockage sans
+      // rien apporter à la conversation.
+      localStorage.setItem(CHAT_STORAGE_KEY, JSON.stringify(messages.slice(-40)));
+    } catch {
+      /* Quota atteint : la conversation reste utilisable dans cette session. */
+    }
+  }, [messages]);
+
+  // Repères des boutons de planification déjà utilisés, pour un retour visuel.
+  const [scheduledIds, setScheduledIds] = useState<string[]>([]);
   const [inputVal, setInputVal] = useState<string>('');
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [isGeneratingAction, setIsGeneratingAction] = useState<boolean>(false);
@@ -245,6 +275,10 @@ export const VirtualCoachChat: React.FC<VirtualCoachChatProps> = ({
               type: 'open_workout',
               label: 'Voir la séance',
             },
+            // Séance mémorisée sur le message : le bouton « Planifier » doit
+            // pouvoir la replacer dans le calendrier même après d'autres
+            // échanges.
+            scheduleCandidate: plan,
           },
         ]);
       }
@@ -348,7 +382,10 @@ export const VirtualCoachChat: React.FC<VirtualCoachChatProps> = ({
                       {isGeneratingAction ? (
                         <>
                           <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                          <span>Conception en cours avec Jean-Marc...</span>
+                          {/* La durée est annoncée : construire une séance
+                              structurée demande une trentaine de secondes, et
+                              sans repère on croit que rien ne se passe. */}
+                          <span>Conception en cours — environ 30 s</span>
                         </>
                       ) : (
                         <>
@@ -358,6 +395,52 @@ export const VirtualCoachChat: React.FC<VirtualCoachChatProps> = ({
                         </>
                       )}
                     </button>
+
+                    {/* Planification directe. Sans elle, une séance générée
+                        n'entrait jamais dans le calendrier : elle restait un
+                        objet flottant, invisible du tableau de bord et jamais
+                        comptée dans la progression. */}
+                    {msg.scheduleCandidate && onScheduleWorkout && (
+                      <div className="mt-2">
+                        <div className="text-[10.5px] text-stone-400 mb-1.5">
+                          Planifier cette séance :
+                        </div>
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          {[0, 1, 2, 3].map((offset) => {
+                            const date = new Date();
+                            date.setHours(0, 0, 0, 0);
+                            date.setDate(date.getDate() + offset);
+                            const label =
+                              offset === 0
+                                ? "Aujourd'hui"
+                                : offset === 1
+                                  ? 'Demain'
+                                  : date.toLocaleDateString('fr-FR', {
+                                      weekday: 'short',
+                                      day: 'numeric',
+                                    });
+                            const isDone = scheduledIds.includes(msg.id + offset);
+                            return (
+                              <button
+                                key={offset}
+                                onClick={() => {
+                                  onScheduleWorkout(msg.scheduleCandidate!, date);
+                                  setScheduledIds((prev) => [...prev, msg.id + offset]);
+                                }}
+                                className={`px-2.5 py-1.5 rounded-lg text-[11px] font-bold cursor-pointer transition-colors ${
+                                  isDone
+                                    ? 'bg-emerald-500/20 border border-emerald-500/40 text-emerald-300'
+                                    : 'bg-stone-800 border border-stone-700 text-stone-200 hover:border-amber-500/50'
+                                }`}
+                              >
+                                {isDone ? '✓ ' : ''}
+                                {label}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
                   </div>
                 )}
 

@@ -12,7 +12,12 @@ import { ScreenTitle } from './ScreenTitle';
 import { ProgressRing } from './ProgressRing';
 import { WeekStrip } from './WeekStrip';
 import { SectionHeader } from './SectionHeader';
-import { Compass, SlidersHorizontal, ChevronRight, ChevronDown } from 'lucide-react';
+import { Compass, SlidersHorizontal, ChevronRight, ChevronDown, Trash2 } from 'lucide-react';
+import {
+  deleteWorkout,
+  getSavedWorkouts,
+  type StoredWorkout,
+} from '../utils/workoutLibrary';
 
 interface WorkoutSelectorProps {
   onStartWorkout: (plan: WorkoutPlan) => void;
@@ -41,6 +46,9 @@ export const WorkoutSelector: React.FC<WorkoutSelectorProps> = ({
   const [filterCategory, setFilterCategory] = useState<'all' | 'vo2max' | 'seuil' | 'endurance' | 'recup'>('all');
   const [isBlockDetailOpen, setIsBlockDetailOpen] = useState<boolean>(false);
   const [rides, setRides] = useState<RideRecord[]>([]);
+  // Séances enregistrées : celles créées par le coach doivent se retrouver
+  // ici, sinon elles n'existent que le temps d'un écran.
+  const [saved, setSaved] = useState<StoredWorkout[]>(() => getSavedWorkouts());
   const catalogueRef = useRef<HTMLElement>(null);
 
   useEffect(() => {
@@ -301,6 +309,54 @@ export const WorkoutSelector: React.FC<WorkoutSelectorProps> = ({
             </button>
           ))}
         </div>
+
+        {saved.length > 0 && (
+          <div className="mb-4">
+            <div className="text-[11px] uppercase tracking-wider text-stone-500 font-bold mb-2">
+              Mes séances ({saved.length})
+            </div>
+            <div className="space-y-2">
+              {saved.map((workout) => {
+                const durMin = Math.round(
+                  flattenWorkoutPlan(workout).reduce((a, x) => a + x.durationSec, 0) / 60,
+                );
+                const isSelected = selectedPlan.nom === workout.nom;
+                return (
+                  <div
+                    key={workout.id}
+                    className={`w-full p-3 rounded-2xl border flex items-center gap-3 transition-colors ${
+                      isSelected
+                        ? 'bg-amber-500/10 border-amber-500'
+                        : 'bg-stone-900 border-stone-800'
+                    }`}
+                  >
+                    <button
+                      onClick={() => onSelectPlan(workout)}
+                      className="flex-1 min-w-0 text-left cursor-pointer"
+                    >
+                      <div className="text-[13px] font-bold text-white truncate">
+                        {workout.nom}
+                      </div>
+                      <div className="text-[11px] text-stone-400 truncate mt-0.5">
+                        {durMin} min · {workout.objectif}
+                      </div>
+                    </button>
+                    <button
+                      onClick={() => {
+                        deleteWorkout(workout.id);
+                        setSaved(getSavedWorkouts());
+                      }}
+                      aria-label={`Supprimer ${workout.nom}`}
+                      className="p-2 rounded-lg text-stone-500 hover:text-rose-400 cursor-pointer transition-colors shrink-0"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
 
         {/* Carrousel : la carte suivante dépasse volontairement du bord, ce qui
             signale qu'il y en a d'autres sans ajouter de flèche ni de point. */}

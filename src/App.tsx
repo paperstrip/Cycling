@@ -18,7 +18,16 @@ import { VoiceSettingsModal } from './components/VoiceSettingsModal';
 import { OnboardingModal } from './components/OnboardingModal';
 import { ApiKeyModal } from './components/ApiKeyModal';
 import { BottomNav, NAV_ITEMS } from './components/BottomNav';
-import { markSessionCompleted } from './utils/programProgress';
+import {
+  createAdHocProgram,
+  markSessionCompleted,
+  scheduleWorkoutOnDate,
+} from './utils/programProgress';
+import {
+  getSelectedWorkout,
+  saveSelectedWorkout,
+  saveWorkout,
+} from './utils/workoutLibrary';
 import { RidePreparationModal } from './components/RidePreparationModal';
 import {
   clearActiveRide,
@@ -56,7 +65,16 @@ export default function App() {
   const [lastCompletedRide, setLastCompletedRide] = useState<RideRecord | null>(null);
 
   // Active workout & route selection
-  const [activePlan, setActivePlan] = useState<WorkoutPlan>(PRESET_WORKOUTS[0]);
+  // Reprend la dernière séance sélectionnée : sans cela, l'app revenait à la
+  // première du catalogue à chaque ouverture, y compris juste après en avoir
+  // fait générer une sur mesure.
+  const [activePlan, setActivePlanState] = useState<WorkoutPlan>(
+    () => getSelectedWorkout() || PRESET_WORKOUTS[0],
+  );
+  const setActivePlan = (plan: WorkoutPlan) => {
+    setActivePlanState(plan);
+    saveSelectedWorkout(plan);
+  };
 
   // Profile and Program State
   const [cyclistProfile, setCyclistProfile] = useState<CyclistProfile>(getStoredProfile());
@@ -129,6 +147,19 @@ export default function App() {
     saveStoredProfile(calibratedProfile);
     setCompletedOnboarding(true);
     setIsOnboardingOpen(false);
+  };
+
+  /**
+   * Place une séance dans le planning, en créant le programme au besoin.
+   *
+   * Sans programme actif, planifier échouait silencieusement : on en crée donc
+   * un vide plutôt que d'exiger une génération complète au préalable.
+   */
+  const handleScheduleWorkout = (plan: WorkoutPlan, date: Date) => {
+    const base = activeProgram || createAdHocProgram(cyclistProfile.level);
+    const updated = scheduleWorkoutOnDate(base, plan, date);
+    setActiveProgram(updated);
+    saveStoredActiveProgram(updated);
   };
 
   const handleProgramGenerated = (program: TrainingProgram) => {
@@ -472,10 +503,12 @@ export default function App() {
               cyclistProfile={cyclistProfile}
               currentProgram={activeProgram}
               onSelectGeneratedPlan={(plan) => {
-                // Pas de bascule d'onglet : la conversation reste à l'écran
-                // pour que la confirmation soit lue.
+                // Enregistrée d'office : une séance générée doit se retrouver
+                // plus tard, pas disparaître en quittant l'écran.
+                saveWorkout(plan, 'coach');
                 setActivePlan(plan);
               }}
+              onScheduleWorkout={handleScheduleWorkout}
               onProgramGenerated={(prog) => {
                 handleProgramGenerated(prog);
                 setActiveTab('program');
