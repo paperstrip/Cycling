@@ -73,44 +73,67 @@ export function isOverloadedError(error: any): boolean {
 }
 
 /**
- * Modèles de texte, du préféré au repli.
+ * Chaînes de modèles, par usage.
  *
- * La saturation frappe un modèle en particulier, pas l'API entière : lors d'une
- * panne observée, `gemini-3.7-flash` renvoyait 503 sur la moindre requête
- * pendant que les trois suivants répondaient en quelques centaines de
- * millisecondes. Insister sur le modèle saturé ne pouvait donc rien donner ;
- * il faut changer de modèle.
+ * Mesures faites sur une vraie requête de coaching, avec le bilan
+ * d'entraînement complet en contexte :
+ *   gemini-3.1-flash-lite ....  2,7 s
+ *   gemini-flash-lite-latest .  2,8 s
+ *   gemini-3.7-flash .........  8,1 s (et fréquemment 503)
+ *   gemini-2.5-flash .........  13,2 s
+ *   gemini-3.6-flash .........  45,8 s
+ *
+ * D'où deux chaînes distinctes. La conversation part sur les modèles légers :
+ * une réponse de coach n'exige pas de raisonnement profond, et vingt secondes
+ * d'attente rendent l'échange pénible. La génération structurée — séance,
+ * programme, itinéraire — garde en tête le modèle le plus capable, parce qu'elle
+ * doit respecter un schéma JSON détaillé et que la qualité prime sur la seconde
+ * gagnée.
+ *
+ * `gemini-3.6-flash` est écarté des deux : 45 s est inutilisable, et c'est lui
+ * que la chaîne précédente mémorisait après une panne de 3.7 — d'où la lenteur
+ * constatée.
  */
-const TEXT_MODEL_CHAIN = [TEXT_MODEL, 'gemini-3.6-flash', 'gemini-flash-latest'];
+const CHAT_MODEL_CHAIN = [
+  'gemini-3.1-flash-lite',
+  'gemini-flash-lite-latest',
+  'gemini-2.5-flash',
+  TEXT_MODEL,
+];
 
-/** Même principe pour la synthèse vocale. */
+const STRUCTURED_MODEL_CHAIN = [TEXT_MODEL, 'gemini-2.5-flash', 'gemini-3.1-flash-lite'];
+
+/** Chaîne de la synthèse vocale. */
 const TTS_MODEL_CHAIN = [TTS_MODEL, 'gemini-2.5-flash-preview-tts'];
 
-/** Attentes du second passage, quand toute la chaîne est saturée. */
+/** Attentes du second passage, quand toute une chaîne est saturée. */
 const RETRY_DELAYS_MS = [1500, 4000];
 
 /**
- * Dernier modèle ayant répondu, pour ne pas rappeler un modèle mort à chaque
- * requête. Oublié au bout d'un quart d'heure : une saturation est passagère et
- * on doit pouvoir revenir au modèle préféré.
+ * Dernier modèle ayant répondu, mémorisé PAR CHAÎNE.
+ *
+ * Une mémoire globale faisait basculer la conversation sur le modèle retenu
+ * pour la génération structurée, et inversement. Oubliée au bout d'un quart
+ * d'heure : une saturation est passagère, on doit pouvoir revenir au modèle
+ * préféré.
  */
 const PREFERRED_MODEL_TTL_MS = 15 * 60 * 1000;
-let workingModel: { name: string; at: number } | null = null;
+const workingModelByChain = new Map<string, { name: string; at: number }>();
 
 function orderedChain(chain: string[]): string[] {
-  if (!workingModel || Date.now() - workingModel.at > PREFERRED_MODEL_TTL_MS) return chain;
-  const known = workingModel.name;
-  if (!chain.includes(known)) return chain;
-  return [known, ...chain.filter((m) => m !== known)];
+  const known = workingModelByChain.get(chain.join('|'));
+  if (!known || Date.now() - known.at > PREFERRED_MODEL_TTL_MS) return chain;
+  if (!chain.includes(known.name)) return chain;
+  return [known.name, ...chain.filter((m) => m !== known.name)];
 }
 
 /**
  * Appelle Gemini en basculant de modèle sur saturation.
  *
- * Premier passage : chaque modèle de la chaîne est essayé une fois, sans
- * attente — la bascule doit être imperceptible. Si toute la chaîne est
- * saturée, on repasse avec des délais croissants, car il s'agit alors d'un
- * incident général et non d'un modèle en particulier.
+ * Premier passage : un essai par modèle, sans attente — la bascule doit rester
+ * imperceptible. Si toute la chaîne est saturée, second et troisième passages
+ * espacés, car il s'agit alors d'un incident général et non d'un modèle en
+ * particulier.
  *
  * Les autres causes — clé absente, quota, réseau — ne sont jamais rejouées :
  * changer de modèle n'y changerait rien et ferait perdre du temps.
@@ -119,6 +142,7 @@ async function callWithFallback<T>(
   chain: string[],
   call: (model: string) => Promise<T>,
 ): Promise<T> {
+  const chainKey = chain.join('|');
   let lastError: any;
 
   for (let pass = 0; pass <= RETRY_DELAYS_MS.length; pass += 1) {
@@ -128,7 +152,7 @@ async function callWithFallback<T>(
     for (const model of orderedChain(chain)) {
       try {
         const result = await call(model);
-        workingModel = { name: model, at: Date.now() };
+        workingModelByChain.set(chainKey, { name: model, at: Date.now() });
         return result;
       } catch (error) {
         lastError = error;
@@ -140,12 +164,17 @@ async function callWithFallback<T>(
   throw lastError;
 }
 
-/** Chaîne texte. */
-function withOverloadRetry<T>(call: (model: string) => Promise<T>): Promise<T> {
-  return callWithFallback(TEXT_MODEL_CHAIN, call);
+/** Conversation et commentaires en direct : la vitesse prime. */
+function withChatFallback<T>(call: (model: string) => Promise<T>): Promise<T> {
+  return callWithFallback(CHAT_MODEL_CHAIN, call);
 }
 
-/** Chaîne synthèse vocale. */
+/** Génération structurée : la qualité prime. */
+function withOverloadRetry<T>(call: (model: string) => Promise<T>): Promise<T> {
+  return callWithFallback(STRUCTURED_MODEL_CHAIN, call);
+}
+
+/** Synthèse vocale. */
 function withTtsFallback<T>(call: (model: string) => Promise<T>): Promise<T> {
   return callWithFallback(TTS_MODEL_CHAIN, call);
 }
@@ -443,7 +472,7 @@ Dans tes échanges :
 
   const prompt = `Contexte :\n${profileContext}\n${programContext}${trainingContext}\n\nHistorique de la discussion :\n${conversationHistory}\n\nDernier message du cycliste, auquel tu dois répondre précisément :\n"${lastCyclistMessage}"\n\nDonne la prochaine réponse du Coach Jean-Marc. Traite d'abord le contenu de ce dernier message avec des éléments chiffrés et concrets, puis, si tu as assez d'éléments, propose une action (séance ciblée ou programme) dont le payloadPrompt reprend les spécificités évoquées.`;
 
-  const response = await withOverloadRetry((model) =>
+  const response = await withChatFallback((model) =>
       getClient().models.generateContent({
       model,
       contents: prompt,
@@ -462,7 +491,13 @@ Dans tes échanges :
               properties: {
                 type: {
                   type: Type.STRING,
-                  description: "'generate_program' | 'generate_plan' | 'suggest_route' | 'start_workout'",
+                  // Énumération et non description libre : le champ était une
+                  // chaîne quelconque, le modèle pouvait donc renvoyer une
+                  // valeur que le code ne traitait pas, et le bouton affiché
+                  // ne faisait alors rien du tout.
+                  enum: ['generate_program', 'generate_plan', 'suggest_route', 'start_workout'],
+                  description:
+                    "Nature de l'action proposée. 'generate_plan' pour une séance, 'generate_program' pour un plan de plusieurs semaines, 'suggest_route' pour un itinéraire.",
                 },
                 label: {
                   type: Type.STRING,
@@ -766,7 +801,7 @@ En tant que Coach d'élite Jean-Marc, rédige un débriefing post-séance constr
 2. Ce que cette séance apporte à la progression d'ensemble, en la situant par rapport aux semaines précédentes.
 3. La consigne concrète pour la suite : récupération immédiate, et surtout ce que devrait être la prochaine séance compte tenu de la charge actuelle.`;
 
-    const response = await withOverloadRetry((model) =>
+    const response = await withChatFallback((model) =>
         getClient().models.generateContent({
         model,
         contents: prompt,
@@ -822,7 +857,7 @@ export async function generateLiveMotivation(payload: {
 
 Rédige un message audio de coach cycliste en français : 1 à 2 phrases courtes, très énergiques, impactantes et rythmées (maximum 25 mots), adaptées à la situation pour motiver, encourager avec passion ou réguler l'effort. Pas de fioritures, pas de balises.`;
 
-    const response = await withOverloadRetry((model) =>
+    const response = await withChatFallback((model) =>
         getClient().models.generateContent({
         model,
         contents: prompt,
@@ -929,7 +964,7 @@ ${
 
 Réponds en français, 25 mots maximum pour le commentaire audio.`;
 
-    const response = await withOverloadRetry((model) =>
+    const response = await withChatFallback((model) =>
         getClient().models.generateContent({
         model,
         contents: prompt,

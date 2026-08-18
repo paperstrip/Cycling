@@ -472,14 +472,17 @@ export default function App() {
               cyclistProfile={cyclistProfile}
               currentProgram={activeProgram}
               onSelectGeneratedPlan={(plan) => {
+                // Pas de bascule d'onglet : la conversation reste à l'écran
+                // pour que la confirmation soit lue.
                 setActivePlan(plan);
-                setActiveTab('workouts');
               }}
               onProgramGenerated={(prog) => {
                 handleProgramGenerated(prog);
                 setActiveTab('program');
               }}
               onOpenProfileSettings={() => setActiveTab('profile')}
+              onOpenRoutesTab={() => setActiveTab('routes')}
+              onGoToWorkouts={() => setActiveTab('workouts')}
             />
           </div>
         )}

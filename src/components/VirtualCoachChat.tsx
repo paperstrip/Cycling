@@ -32,6 +32,8 @@ interface VirtualCoachChatProps {
   onSelectGeneratedPlan: (plan: WorkoutPlan) => void;
   onProgramGenerated: (program: TrainingProgram) => void;
   onOpenProfileSettings: () => void;
+  onOpenRoutesTab?: () => void;
+  onGoToWorkouts?: () => void;
 }
 
 export const VirtualCoachChat: React.FC<VirtualCoachChatProps> = ({
@@ -40,6 +42,8 @@ export const VirtualCoachChat: React.FC<VirtualCoachChatProps> = ({
   onSelectGeneratedPlan,
   onProgramGenerated,
   onOpenProfileSettings,
+  onOpenRoutesTab,
+  onGoToWorkouts,
 }) => {
   const [messages, setMessages] = useState<ChatMessage[]>([
     {
@@ -194,14 +198,55 @@ export const VirtualCoachChat: React.FC<VirtualCoachChatProps> = ({
             timestamp: Date.now(),
           },
         ]);
-      } else if (action.type === 'generate_plan' || action.type === 'start_workout') {
-        const promptToUse = action.payload?.payloadPrompt || 'Séance spécifique pour progression ' + cyclistProfile.primaryGoal;
+      } else if (action.type === 'open_routes') {
+        onOpenRoutesTab?.();
+      } else if (action.type === 'open_workout') {
+        // Purement local : aucune génération, on ouvre simplement la séance
+        // déjà créée. Traité avant tout appel réseau.
+        onGoToWorkouts?.();
+      } else if (action.type === 'suggest_route') {
+        // Ce cas n'était traité nulle part : le bouton s'affichait et ne
+        // faisait rien, sans le moindre message.
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: 'route-' + Date.now(),
+            sender: 'coach',
+            text: "Pour l'itinéraire, direction l'onglet Parcours : indiquez votre ville et la distance, le tracé sera calé sur les routes existantes.",
+            timestamp: Date.now(),
+            suggestedAction: { type: 'open_routes', label: 'Ouvrir Parcours' },
+          },
+        ]);
+      } else {
+        // Tout le reste — y compris une valeur inattendue — produit une séance.
+        // Mieux vaut agir que laisser un bouton mort.
+        const promptToUse =
+          action.payload?.payloadPrompt ||
+          'Séance spécifique pour progression ' + cyclistProfile.primaryGoal;
         const plan: WorkoutPlan = await generateWorkoutPlan({
           prompt: promptToUse,
           cyclistProfile,
           trainingSummary,
         });
+
+        // On reste dans la conversation. L'app basculait aussitôt sur
+        // l'accueil : le message de confirmation était donc posté sur un écran
+        // qu'on ne regardait plus, et la séance semblait n'avoir jamais été
+        // créée. C'est à la personne de décider quand y aller.
         onSelectGeneratedPlan(plan);
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: 'plan-created-' + Date.now(),
+            sender: 'coach',
+            text: `✅ Séance **« ${plan.nom} »** créée : ${plan.objectif}. Elle est sélectionnée sur l'accueil, prête à démarrer.`,
+            timestamp: Date.now(),
+            suggestedAction: {
+              type: 'open_workout',
+              label: 'Voir la séance',
+            },
+          },
+        ]);
       }
     } catch (err) {
       console.error(err);

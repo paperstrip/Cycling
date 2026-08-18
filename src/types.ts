@@ -150,7 +150,14 @@ export interface ChatMessage {
   /** Message d'erreur système, à ne pas confondre avec une réponse du coach. */
   isError?: boolean;
   suggestedAction?: {
-    type: 'generate_plan' | 'generate_program' | 'suggest_route' | 'start_workout';
+    type:
+      | 'generate_plan'
+      | 'generate_program'
+      | 'suggest_route'
+      | 'start_workout'
+      /** Actions locales : simple navigation, aucun appel à l'IA. */
+      | 'open_workout'
+      | 'open_routes';
     payload?: any;
     label: string;
   };
