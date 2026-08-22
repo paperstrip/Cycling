@@ -63,17 +63,25 @@ self.addEventListener('fetch', (event) => {
   if (request.method !== 'GET') return;
   if (new URL(request.url).origin !== self.location.origin) return;
 
-  // Navigation (HTML) : réseau d'abord, pour toujours obtenir la dernière
-  // version déployée ; le cache prend le relais hors connexion.
+  // Navigation (HTML) : cache d'abord, réseau en secours.
+  //
+  // Le réseau était servi en premier, et la réponse écrasait l'index.html du
+  // cache. Or cet index tout juste déployé référence des fichiers JS aux noms
+  // hachés NEUFS, qui ne sont mis en cache qu'à l'installation du nouveau
+  // service worker — laquelle attend l'accord de l'utilisateur. Entre les deux,
+  // le cache contenait donc un index pointant vers des fichiers absents : hors
+  // connexion, l'app affichait une page blanche.
+  //
+  // Servir la coquille depuis le cache garantit que le HTML et les assets
+  // proviennent toujours du même build. Les mises à jour restent assurées par
+  // le cycle du service worker (nouveau BUILD_ID, nouveau cache, bandeau de
+  // mise à jour puis SKIP_WAITING).
   if (request.mode === 'navigate') {
     event.respondWith(
-      fetch(request)
-        .then((response) => {
-          const copy = response.clone();
-          caches.open(CACHE_NAME).then((cache) => cache.put('./index.html', copy));
-          return response;
-        })
-        .catch(() => caches.match('./index.html').then((r) => r || caches.match('./')))
+      caches
+        .match('./index.html')
+        .then((cached) => cached || caches.match('./') || fetch(request))
+        .catch(() => fetch(request))
     );
     return;
   }
@@ -90,7 +98,14 @@ self.addEventListener('fetch', (event) => {
           }
           return response;
         })
-        .catch(() => caches.match('./index.html'));
+        .catch(
+          () =>
+            // Surtout PAS index.html en secours : renvoyer du HTML pour une
+            // requête de module JavaScript provoquait un refus de MIME type
+            // et une page blanche, alors qu'un échec franc laisse au
+            // navigateur la possibilité de réessayer.
+            new Response('', { status: 504, statusText: 'Ressource indisponible hors connexion' })
+        );
     })
   );
 });
