@@ -201,3 +201,39 @@ export function createAdHocProgram(level: TrainingProgram['cyclistLevel']): Trai
     createdAt: start.toISOString(),
   };
 }
+
+/**
+ * Séance prévue aujourd'hui, si elle existe et porte un plan exécutable.
+ *
+ * L'accueil affichait la dernière séance choisie à la main, sans jamais
+ * consulter le programme : on pouvait avoir un plan complet généré par le
+ * coach et se voir proposer une séance sans rapport. Le planificateur et
+ * l'écran d'accueil vivaient côte à côte sans se parler.
+ */
+export function todaysScheduledSession(
+  program: TrainingProgram | null,
+  now: number = Date.now(),
+): ScheduledWorkout | null {
+  if (!program) return null;
+  const today = new Date(now);
+  today.setHours(0, 0, 0, 0);
+
+  const match = (program.workouts || []).find(
+    (w) =>
+      w.type !== 'repos' &&
+      scheduledDateFor(program, w).getTime() === today.getTime(),
+  );
+
+  // Une séance sans blocs ne serait pas exécutable : autant ne rien proposer.
+  return match && match.workoutPlan && (match.workoutPlan.blocs || []).length > 0 ? match : null;
+}
+
+/** Jour de repos explicitement prévu aujourd'hui. */
+export function isRestDayToday(program: TrainingProgram | null, now: number = Date.now()): boolean {
+  if (!program) return false;
+  const today = new Date(now);
+  today.setHours(0, 0, 0, 0);
+  return (program.workouts || []).some(
+    (w) => w.type === 'repos' && scheduledDateFor(program, w).getTime() === today.getTime(),
+  );
+}

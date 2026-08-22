@@ -91,19 +91,39 @@ export function deleteWorkout(id: string): void {
  */
 export function saveSelectedWorkout(plan: WorkoutPlan): void {
   try {
-    localStorage.setItem(SELECTED_KEY, JSON.stringify(plan));
+    // Horodatée : un choix vaut pour la journée. Le lendemain, c'est la séance
+    // prévue au programme qui reprend la main, sinon un choix ponctuel
+    // masquerait le plan pour toujours.
+    localStorage.setItem(SELECTED_KEY, JSON.stringify({ plan, at: new Date().toISOString() }));
   } catch {
     // Sans stockage, la sélection ne survivra pas au rechargement.
   }
 }
 
 export function getSelectedWorkout(): WorkoutPlan | null {
+  const entry = readSelection();
+  return entry ? entry.plan : null;
+}
+
+/** Vrai si la séance affichée a été choisie à la main aujourd'hui. */
+export function hasSelectionForToday(): boolean {
+  const entry = readSelection();
+  if (!entry) return false;
+  const chosen = new Date(entry.at);
+  const today = new Date();
+  return chosen.toDateString() === today.toDateString();
+}
+
+function readSelection(): { plan: WorkoutPlan; at: string } | null {
   try {
     const raw = localStorage.getItem(SELECTED_KEY);
     if (!raw) return null;
     const parsed = JSON.parse(raw);
+    // Ancien format : la séance était stockée seule, sans date.
+    const plan = parsed?.plan ?? parsed;
+    const at = parsed?.at ?? new Date(0).toISOString();
     // Une séance sans blocs ne serait pas exécutable : mieux vaut l'ignorer.
-    return parsed && Array.isArray(parsed.blocs) && parsed.blocs.length > 0 ? parsed : null;
+    return plan && Array.isArray(plan.blocs) && plan.blocs.length > 0 ? { plan, at } : null;
   } catch {
     return null;
   }

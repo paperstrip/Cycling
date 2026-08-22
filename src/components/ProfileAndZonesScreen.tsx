@@ -433,6 +433,40 @@ export const ProfileAndZonesScreen: React.FC<ProfileAndZonesScreenProps> = ({
           </div>
         </div>
 
+        {/* Ces trois valeurs sont le principal mur d'entrée pour qui débute :
+            personne ne connaît sa FTP en watts sans l'avoir mesurée en labo ou
+            avec un capteur. Elles sont donc explicitées, et rendues facultatives
+            en pratique — les allures réelles prennent le relais. */}
+        <div className="p-4 rounded-2xl bg-stone-900 border border-stone-800 space-y-3">
+          <div className="flex items-start gap-2.5">
+            <Info className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+            <div className="space-y-1.5">
+              <p className="text-[12.5px] text-stone-200 font-bold">
+                Vous ne connaissez pas ces valeurs ? C'est normal.
+              </p>
+              <p className="text-[12px] text-stone-400 leading-relaxed">
+                La FTP est la puissance que vous pourriez tenir une heure à fond. La mesurer
+                demande un capteur de puissance. <span className="text-stone-200">L'app n'en a
+                pas besoin pour fonctionner</span> : laissez-la estimer une valeur de départ, puis
+                après trois ou quatre sorties, elle calera vos cibles sur vos allures réelles et
+                vous proposera de corriger le chiffre.
+              </p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={handleEstimateFtp}
+            className="w-full py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-stone-950 text-[12px] font-black cursor-pointer transition-colors"
+          >
+            Estimer ma FTP d'après mon niveau et mon poids
+          </button>
+          <p className="text-[11px] text-stone-500">
+            Pour la fréquence cardiaque maximale, si vous ne l'avez jamais mesurée, gardez la
+            valeur proposée : elle ne sert qu'aux zones cardio, que l'app n'utilise pas pour
+            piloter vos séances.
+          </p>
+        </div>
+
         {/* Row 2: FTP, Weight, HRmax */}
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-xs p-4 rounded-2xl bg-stone-950 border border-stone-800">
           <div>
@@ -441,13 +475,6 @@ export const ProfileAndZonesScreen: React.FC<ProfileAndZonesScreenProps> = ({
                 <Zap className="w-3.5 h-3.5 text-amber-400" />
                 Puissance Seuil FTP (Watts)
               </label>
-              <button
-                type="button"
-                onClick={handleEstimateFtp}
-                className="text-[10px] text-amber-400 hover:underline font-bold"
-              >
-                Auto-estimer
-              </button>
             </div>
             <input
               type="number"

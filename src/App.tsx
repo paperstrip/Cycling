@@ -22,9 +22,11 @@ import {
   createAdHocProgram,
   markSessionCompleted,
   scheduleWorkoutOnDate,
+  todaysScheduledSession,
 } from './utils/programProgress';
 import {
   getSelectedWorkout,
+  hasSelectionForToday,
   saveSelectedWorkout,
   saveWorkout,
 } from './utils/workoutLibrary';
@@ -71,6 +73,7 @@ export default function App() {
   const [activePlan, setActivePlanState] = useState<WorkoutPlan>(
     () => getSelectedWorkout() || PRESET_WORKOUTS[0],
   );
+
   const setActivePlan = (plan: WorkoutPlan) => {
     setActivePlanState(plan);
     saveSelectedWorkout(plan);
@@ -82,6 +85,21 @@ export default function App() {
   const greetingLabel =
     greetingHour < 12 ? 'Bonjour' : greetingHour < 18 ? 'Bon après-midi' : 'Bonsoir';
   const [activeProgram, setActiveProgram] = useState<TrainingProgram | null>(getStoredActiveProgram());
+
+  /**
+   * Fait remonter la séance prévue au programme sur l'accueil.
+   *
+   * L'accueil affichait la dernière séance choisie à la main et ignorait le
+   * programme : on pouvait avoir un plan complet généré par le coach et se
+   * voir proposer une séance sans rapport. Un choix manuel reste prioritaire,
+   * mais seulement pour la journée où il a été fait.
+   */
+  useEffect(() => {
+    if (hasSelectionForToday()) return;
+    const today = todaysScheduledSession(activeProgram);
+    if (today?.workoutPlan) setActivePlanState(today.workoutPlan);
+  }, [activeProgram]);
+
 
   // Modals
   const [isOnboardingOpen, setIsOnboardingOpen] = useState<boolean>(!hasCompletedOnboarding());

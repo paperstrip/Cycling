@@ -12,7 +12,15 @@ import { ScreenTitle } from './ScreenTitle';
 import { ProgressRing } from './ProgressRing';
 import { WeekStrip } from './WeekStrip';
 import { SectionHeader } from './SectionHeader';
-import { Compass, SlidersHorizontal, ChevronRight, ChevronDown, Trash2 } from 'lucide-react';
+import {
+  Compass,
+  SlidersHorizontal,
+  ChevronRight,
+  ChevronDown,
+  Trash2,
+  CalendarCheck,
+} from 'lucide-react';
+import { isRestDayToday, todaysScheduledSession } from '../utils/programProgress';
 import {
   deleteWorkout,
   getSavedWorkouts,
@@ -103,6 +111,13 @@ export const WorkoutSelector: React.FC<WorkoutSelectorProps> = ({
   const flattenedSteps = flattenWorkoutPlan(selectedPlan);
   const totalDurationSec = flattenedSteps.reduce((acc, step) => acc + step.durationSec, 0);
 
+  // Séance prévue au programme aujourd'hui : l'accueil doit la refléter, sinon
+  // le planificateur et l'écran d'accueil racontent deux histoires différentes.
+  const plannedToday = todaysScheduledSession(activeProgram);
+  const isShowingPlanned =
+    !!plannedToday?.workoutPlan && plannedToday.workoutPlan.nom === selectedPlan.nom;
+  const restToday = isRestDayToday(activeProgram);
+
   const firstName = (cyclistProfile.name || 'Cycliste').split(' ')[0];
   const hour = new Date().getHours();
   const greeting = hour < 12 ? 'Bonjour' : hour < 18 ? 'Bon après-midi' : 'Bonsoir';
@@ -120,10 +135,41 @@ export const WorkoutSelector: React.FC<WorkoutSelectorProps> = ({
 
       {/* Séance du jour : une image, un titre, un bouton */}
       <section>
-        <SectionHeader title="Votre séance" actionLabel="Changer" onAction={scrollToCatalogue} />
+        <SectionHeader
+          title={isShowingPlanned ? 'Au programme aujourd’hui' : 'Votre séance'}
+          actionLabel="Changer"
+          onAction={scrollToCatalogue}
+        />
+
+        {/* Rappel du plan quand la séance affichée n'est pas celle qui était
+            prévue : sans lui, on s'écarte de son programme sans le savoir. */}
+        {plannedToday?.workoutPlan && !isShowingPlanned && (
+          <button
+            onClick={() => onSelectPlan(plannedToday.workoutPlan!)}
+            className="w-full mb-2.5 p-3 rounded-2xl bg-amber-500/10 border border-amber-500/30 flex items-center gap-3 text-left cursor-pointer hover:bg-amber-500/15 transition-colors"
+          >
+            <CalendarCheck className="w-4 h-4 text-amber-400 shrink-0" />
+            <span className="flex-1 min-w-0">
+              <span className="block text-[11px] text-amber-300/80">Prévu aujourd’hui</span>
+              <span className="block text-[12.5px] font-bold text-white truncate">
+                {plannedToday.title}
+              </span>
+            </span>
+            <span className="text-[11px] font-black uppercase tracking-wider text-amber-400 shrink-0">
+              Charger
+            </span>
+          </button>
+        )}
+
+        {restToday && !plannedToday && (
+          <div className="mb-2.5 p-3 rounded-2xl bg-stone-900 border border-stone-800 text-[12.5px] text-stone-300">
+            Journée de <span className="font-bold text-white">repos</span> au programme. Rouler
+            reste possible, mais la récupération fait partie de l’entraînement.
+          </div>
+        )}
 
         <WorkoutHeroCard
-          eyebrow="Séance du jour"
+          eyebrow={isShowingPlanned ? 'Au programme' : 'Séance du jour'}
           artwork={artworkForWorkout(selectedPlan)}
           illustrationPreference={cyclistProfile.illustrationPreference}
           title={selectedPlan.nom}
