@@ -6,6 +6,11 @@ import { loadTrainingSummary } from '../utils/trainingContext';
 import { formatTimeDisplay, formatTimeHoursDisplay, formatSecondsToMinutes } from '../utils/planFlatten';
 import { RouteViewer } from './RouteViewer';
 import {
+  analyzeCalibrationRide,
+  isCalibrationRide,
+  type CalibrationResult,
+} from '../utils/calibrationTest';
+import {
   Trophy,
   Zap,
   Gauge,
@@ -30,11 +35,13 @@ interface SummaryScreenProps {
   onNewWorkout: () => void;
   onOpenHistory: () => void;
   onOpenCoachChat: () => void;
+  onApplyCalibration?: (result: CalibrationResult) => void;
 }
 
 export const SummaryScreen: React.FC<SummaryScreenProps> = ({
   ride,
   cyclistProfile,
+  onApplyCalibration,
   onNewWorkout,
   onOpenHistory,
   onOpenCoachChat,
@@ -43,6 +50,12 @@ export const SummaryScreen: React.FC<SummaryScreenProps> = ({
   const [downloadNotice, setDownloadNotice] = useState<string | null>(null);
   const [coachDebrief, setCoachDebrief] = useState<string | null>(ride.coachDebrief || null);
   const [isLoadingDebrief, setIsLoadingDebrief] = useState<boolean>(false);
+  const [calibrationApplied, setCalibrationApplied] = useState<boolean>(false);
+
+  // Résultat du test de terrain, s'il s'agit d'une sortie de calibrage.
+  const calibration: CalibrationResult | null = isCalibrationRide(ride)
+    ? analyzeCalibrationRide(ride, cyclistProfile.weightKg, cyclistProfile.level)
+    : null;
 
   // Automatically save to local persistent database
   useEffect(() => {
@@ -140,6 +153,73 @@ export const SummaryScreen: React.FC<SummaryScreenProps> = ({
           </div>
         )}
       </div>
+
+      {/* Résultat du test de calibrage. Placé avant les métriques : c'est la
+          raison d'être de cette sortie, et la seule chose qui change durablement
+          le comportement de l'app. */}
+      {calibration && (
+        <div className="rounded-3xl bg-amber-500/10 border border-amber-500/30 p-5 sm:p-6 space-y-4">
+          <div className="flex items-center gap-2">
+            <Award className="w-5 h-5 text-amber-400 shrink-0" />
+            <h2 className="text-base font-black text-white">Résultat de votre test</h2>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div className="p-3 rounded-2xl bg-stone-950 border border-stone-800 text-center">
+              <div className="text-[10px] uppercase text-stone-500 font-bold">Allure de seuil</div>
+              <div className="font-mono text-xl font-black text-white mt-0.5">
+                {calibration.thresholdSpeedKmh.toFixed(1)}
+                <span className="text-[11px] text-stone-400 ml-1">km/h</span>
+              </div>
+            </div>
+            <div className="p-3 rounded-2xl bg-stone-950 border border-stone-800 text-center">
+              <div className="text-[10px] uppercase text-stone-500 font-bold">FTP estimée</div>
+              <div className="font-mono text-xl font-black text-amber-400 mt-0.5">
+                {calibration.estimatedFtp}
+                <span className="text-[11px] text-stone-400 ml-1">± {calibration.uncertaintyW} W</span>
+              </div>
+            </div>
+          </div>
+
+          <div className="p-3 rounded-2xl bg-stone-950 border border-stone-800">
+            <div className="text-[10px] uppercase text-stone-500 font-bold mb-1.5">
+              Vos nouvelles allures cibles
+            </div>
+            <div className="grid grid-cols-4 gap-2 text-center">
+              {([
+                ['Endurance', calibration.zoneSpeeds.facile],
+                ['Tempo', calibration.zoneSpeeds.moyen],
+                ['Seuil', calibration.zoneSpeeds.seuil],
+                ['VO2', calibration.zoneSpeeds.a_fond],
+              ] as const).map(([label, speed]) => (
+                <div key={label}>
+                  <div className="font-mono text-[13px] font-bold text-white">{speed}</div>
+                  <div className="text-[9.5px] text-stone-500">{label}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <p className="text-[12px] text-amber-200/90 leading-relaxed">{calibration.summary}</p>
+
+          {calibrationApplied ? (
+            <div className="flex items-center gap-2 text-[12.5px] font-bold text-emerald-400">
+              <CheckCircle2 className="w-4 h-4" />
+              Calibrage appliqué. Vos séances suivantes s'y ajusteront.
+            </div>
+          ) : (
+            <button
+              onClick={() => {
+                onApplyCalibration?.(calibration);
+                setCalibrationApplied(true);
+              }}
+              className="w-full py-3 rounded-2xl bg-amber-500 hover:bg-amber-400 text-stone-950 font-black text-sm cursor-pointer transition-colors"
+            >
+              Appliquer ce calibrage à mon profil
+            </button>
+          )}
+        </div>
+      )}
 
       {/* Global Metrics 4-Grid */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">

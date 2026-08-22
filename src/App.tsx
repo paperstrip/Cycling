@@ -38,6 +38,7 @@ import {
   type ActiveRideSession,
 } from './utils/rideSession';
 import { PwaStatusBar, PwaInstallPrompt } from './components/PwaStatusBar';
+import { savePaceBaseline } from './utils/paceCalibration';
 import { audioEngine } from './utils/audioEngine';
 import { hasApiKey } from './utils/apiKey';
 import {
@@ -272,6 +273,18 @@ export default function App() {
           onOpenHistory={() => {
             setLastCompletedRide(null);
             setActiveTab('history');
+          }}
+          onApplyCalibration={(result) => {
+            // Deux effets distincts : la FTP alimente les zones de puissance
+            // affichées, les allures pilotent réellement les séances.
+            savePaceBaseline(result.zoneSpeeds);
+            const updated: CyclistProfile = {
+              ...cyclistProfile,
+              ftpWatts: result.estimatedFtp,
+              isCalibrated: true,
+            };
+            setCyclistProfile(updated);
+            saveStoredProfile(updated);
           }}
           onOpenCoachChat={() => {
             setLastCompletedRide(null);

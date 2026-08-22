@@ -20,6 +20,32 @@ import { targetSpeedForZone } from './rideAnalytics';
 
 const STORAGE_KEY = 'cyclocoach_pace_calibration';
 
+/**
+ * Allures issues du test de terrain.
+ *
+ * Le calibrage ordinaire exige trois blocs par zone, ce qui demande plusieurs
+ * semaines : un débutant roulerait donc longtemps sur des cibles génériques.
+ * Le test de calibrage fournit un ancrage dès la première sortie.
+ */
+const BASELINE_KEY = 'cyclocoach_pace_baseline';
+
+export function savePaceBaseline(zoneSpeeds: Partial<Record<IntensityZone, number>>): void {
+  try {
+    localStorage.setItem(BASELINE_KEY, JSON.stringify(zoneSpeeds));
+  } catch {
+    // Sans stockage, on retombe simplement sur les valeurs génériques.
+  }
+}
+
+export function getPaceBaseline(): Partial<Record<IntensityZone, number>> | null {
+  try {
+    const raw = localStorage.getItem(BASELINE_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
+
 /** Nombre minimum de blocs par zone avant de faire confiance à la mesure. */
 const MIN_BLOCKS_PER_ZONE = 3;
 
@@ -125,10 +151,18 @@ export function resolveTargetSpeed(
   level: string | undefined,
   calibration: PaceCalibration | null,
 ): { speedKmh: number; isCalibrated: boolean } {
+  // Ordre de confiance : ce qui a été observé sur plusieurs séances, puis le
+  // test de terrain, puis seulement la table générique liée au niveau déclaré.
   const measured = calibration?.zones?.[zone];
   if (measured && measured.blockCount >= MIN_BLOCKS_PER_ZONE) {
     return { speedKmh: measured.medianSpeedKmh, isCalibrated: true };
   }
+
+  const baseline = getPaceBaseline()?.[zone];
+  if (baseline && baseline > 0) {
+    return { speedKmh: baseline, isCalibrated: true };
+  }
+
   return { speedKmh: targetSpeedForZone(zone, level), isCalibrated: false };
 }
 

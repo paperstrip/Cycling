@@ -420,7 +420,11 @@ export function summarizeForCoach(
 
   if (profile?.ftpWatts) {
     lines.push(
-      `FTP enregistrée au profil : ${profile.ftpWatts} W${profile.weightKg ? ` pour ${profile.weightKg} kg, soit ${(profile.ftpWatts / profile.weightKg).toFixed(2)} W/kg` : ''}. Valeur déclarée ou estimée, non mesurée.`,
+      `FTP enregistrée au profil : ${profile.ftpWatts} W${profile.weightKg ? ` pour ${profile.weightKg} kg, soit ${(profile.ftpWatts / profile.weightKg).toFixed(2)} W/kg` : ''}. ${
+        profile.isCalibrated
+          ? "Issue d'un test de terrain de 12 minutes, converti en puissance par un modèle physique : fiable en ordre de grandeur, pas au watt près."
+          : "Valeur devinée à partir du niveau déclaré, jamais mesurée. Propose le test de calibrage terrain si le cycliste veut des cibles justes."
+      }`,
     );
   }
 

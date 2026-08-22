@@ -19,7 +19,9 @@ import {
   ChevronDown,
   Trash2,
   CalendarCheck,
+  Gauge,
 } from 'lucide-react';
+import { buildCalibrationWorkout } from '../utils/calibrationTest';
 import { isRestDayToday, todaysScheduledSession } from '../utils/programProgress';
 import {
   deleteWorkout,
@@ -132,6 +134,32 @@ export const WorkoutSelector: React.FC<WorkoutSelectorProps> = ({
         />
         <WeekStrip rideDates={rides.map((r) => r.date)} />
       </section>
+
+      {/* Invitation au test de terrain tant que le profil n'a jamais été
+          mesuré. Sans lui, la FTP et les allures cibles ne sont que des
+          suppositions tirées du niveau déclaré. */}
+      {!cyclistProfile.isCalibrated && (
+        <section>
+          <button
+            onClick={() => onStartWorkout(buildCalibrationWorkout())}
+            className="w-full p-4 rounded-3xl bg-amber-500/10 border border-amber-500/30 flex items-center gap-3.5 text-left cursor-pointer hover:bg-amber-500/15 transition-colors"
+          >
+            <div className="w-10 h-10 rounded-2xl bg-amber-500 text-stone-950 flex items-center justify-center shrink-0">
+              <Gauge className="w-5 h-5" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="text-[13.5px] font-black text-white">
+                Commencez par le test de calibrage
+              </div>
+              <div className="text-[11.5px] text-amber-200/80 mt-0.5 leading-snug">
+                32 min. Il mesure votre allure réelle et remplace les valeurs devinées de votre
+                profil — tout le reste s'y adaptera.
+              </div>
+            </div>
+            <ChevronRight className="w-4 h-4 text-amber-400 shrink-0" />
+          </button>
+        </section>
+      )}
 
       {/* Séance du jour : une image, un titre, un bouton */}
       <section>
